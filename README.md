@@ -101,38 +101,15 @@ docker compose exec -T app python -c "import sqlite3; s=sqlite3.connect('/srv/da
 
 **Moving to Postgres later:** create a Managed PostgreSQL database, set `DATABASE_URL=postgresql://...?...sslmode=require` in `.env`, and `docker compose up -d`. Tables are created on startup. Existing SQLite data isn't migrated automatically.
 
-### B. App Platform (auto-deploy on push to `main`, managed Postgres, HTTPS only)
+### B. App Platform (auto-deploy on push to `main`, no database)
 
-Cost: app `apps-s-1vcpu-0.5gb` ($5/mo) + smallest managed PostgreSQL cluster ($15/mo).
+One $5/mo container. Data is kept in SQLite on the container's disk and **wiped on every deploy or restart**. Routers don't resend records they were already told were delivered, so wiped data is gone for good. HTTPS only, so the routers need `ssl`.
 
-**Why not an App Platform "dev database" ($7/mo)?** They only offer PostgreSQL 15+, where the app's database user may not create tables in the `public` schema, and a dev database gives you no admin login to `GRANT` it. The app would crash on startup. A managed cluster gives you the `doadmin` user, which can create tables.
+1. Create → App Platform → GitHub → `RRokas/mesh-collector`, branch `main`, **Autodeploy** on. It detects the Dockerfile. Set HTTP port **8000**, region Frankfurt, the $5 size. (Or `doctl apps create --spec .do/app.yaml`.)
+2. Optional: under Settings → Environment Variables, add `INGEST_TOKEN` and `DASHBOARD_PASSWORD` (tick **Encrypt**).
+3. Check `https://<app>.ondigitalocean.app/healthz` → `{"ok":true}`.
 
-**1. Create the database** (once): Databases → Create → PostgreSQL 17, region **Frankfurt (FRA1)**, smallest single-node plan, name `mesh-db`. When it's ready, open it → **Connection details** → *Public network*, user `doadmin`, database `defaultdb` → copy the **Connection string** (`postgresql://doadmin:…@…:25060/defaultdb?sslmode=require`).
-
-**2. Create the app** with either method:
-
-- *Control panel:* Create → App Platform → GitHub → authorise DigitalOcean for `RRokas/mesh-collector` → branch `main`, **Autodeploy** ticked → it detects the Dockerfile. Set the region to Frankfurt, size to the $5 plan, HTTP port **8000**. Then Settings → App Spec → Edit, and paste `.do/app.yaml` to pick up the health check and settings.
-- *CLI:* `doctl apps create --spec .do/app.yaml` (your DigitalOcean account must already be linked to GitHub, which the control panel asks you to do the first time).
-
-**3. Add the secrets:** App → Settings → `web` → Environment Variables → Edit. Add these, each with **Encrypt** ticked:
-
-| Key | Value |
-|---|---|
-| `DATABASE_URL` | connection string from step 1 |
-| `INGEST_TOKEN` | `python3 -c "import secrets; print(secrets.token_urlsafe(24))"` |
-| `DASHBOARD_PASSWORD` | your choice |
-
-Saving redeploys. Until `DATABASE_URL` is set the app refuses to start (`REQUIRE_POSTGRES=1`) instead of quietly writing to the container's disk, which App Platform wipes on every deploy.
-
-**4. Lock down the database:** mesh-db → Settings → Trusted sources → add the `mesh-collector` app.
-
-**5. Check it:** open `https://<app>.ondigitalocean.app/healthz` → `{"ok":true}`. From then on, every `git push` to `main` builds and rolls out a new version. If the new version fails `/healthz`, the old one keeps serving and you get a "deployment failed" email.
-
-Router URL: `https://<app>.ondigitalocean.app/ingest?token=<INGEST_TOKEN>`. This needs `ssl` on the routers, because App Platform redirects plain HTTP.
-
-**Notes:**
-- `.do/app.yaml` is read by `doctl` and the spec editor, not on every push. Pushes deploy code; spec changes go through `doctl apps update <id> --spec .do/app.yaml` or the editor.
-- If you connect as a non-admin database user instead, the app stops at startup and logs the exact `GRANT` to run as `doadmin`.
+Every push to `main` rebuilds and redeploys. Router URL: `https://<app>.ondigitalocean.app/ingest` (add `?token=<INGEST_TOKEN>` if you set one).
 
 ---
 

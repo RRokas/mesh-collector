@@ -1,23 +1,7 @@
-# DigitalOcean App Platform spec for mesh-collector.
-#
-# Auto-deploy: every push to `main` rebuilds the Dockerfile and rolls out.
-#
-# Database: a managed PostgreSQL cluster you create once (see README,
-# "Deploy on App Platform"). We deliberately do NOT use an App Platform
-# "dev database": those run PostgreSQL 15+, where the app's user cannot
-# create tables in the public schema and there is no admin login to grant it.
-#
-# Secrets (DATABASE_URL, INGEST_TOKEN, DASHBOARD_PASSWORD) are NOT in this
-# file because the repo is public. Set them in the control panel:
-#   App -> Settings -> web -> Environment Variables -> Edit (tick "Encrypt").
-#
-# Create the app:   doctl apps create --spec .do/app.yaml
-# Update the app:   doctl apps update <app-id> --spec .do/app.yaml
-#                   (this file is only read by doctl / "edit spec"; pushes
-#                    to main redeploy code, not spec changes)
-#
-# HTTPS ONLY: App Platform 301-redirects plain HTTP, so routers must have
-# Python's ssl module and use https:// in their --uplink URL.
+# DigitalOcean App Platform: one container, auto-deploys on every push to main.
+# Data lives in SQLite on the container disk and is wiped on each deploy/restart.
+# Optional secrets (set in the control panel, not here: the repo is public):
+#   INGEST_TOKEN, DASHBOARD_PASSWORD
 name: mesh-collector
 region: fra
 services:
@@ -32,27 +16,3 @@ services:
     instance_size_slug: apps-s-1vcpu-0.5gb
     health_check:
       http_path: /healthz
-      initial_delay_seconds: 10
-      period_seconds: 10
-      timeout_seconds: 5
-      failure_threshold: 6
-    envs:
-      # Refuse to start on the throwaway container disk if DATABASE_URL is missing.
-      - key: REQUIRE_POSTGRES
-        scope: RUN_TIME
-        value: "1"
-      - key: DECODE_MODE
-        scope: RUN_TIME
-        value: router
-      - key: DASHBOARD_USER
-        scope: RUN_TIME
-        value: admin
-      - key: STALE_TAG_MINUTES
-        scope: RUN_TIME
-        value: "30"
-      - key: SILENT_ROUTER_MINUTES
-        scope: RUN_TIME
-        value: "5"
-alerts:
-  - rule: DEPLOYMENT_FAILED
-  - rule: DOMAIN_FAILED
