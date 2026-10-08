@@ -1,0 +1,18 @@
+# HTTPS for everything, with a certificate from Let's Encrypt.
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy app:8000
+}
+
+# Plain HTTP: /ingest is served directly (no redirect) because the routers'
+# Python may not have the ssl module yet. Everything else goes to HTTPS.
+# Once the routers do HTTPS, delete the `handle /ingest` block.
+# (Caddy answers ACME HTTP-01 challenges on its own before these routes.)
+http://{$DOMAIN} {
+	handle /ingest {
+		reverse_proxy app:8000
+	}
+	handle {
+		redir https://{host}{uri} permanent
+	}
+}

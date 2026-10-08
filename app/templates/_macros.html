@@ -1,0 +1,6 @@
+{% macro ts(v, mode='rel') -%}
+{%- if v is not none -%}<time data-ts="{{ v }}" data-mode="{{ mode }}">{{ v }}</time>{%- else -%}<span class="muted">—</span>{%- endif -%}
+{%- endmacro %}
+{% macro opt(v, fmt='%s') -%}
+{%- if v is not none -%}{{ fmt|format(v) }}{%- else -%}<span class="muted">—</span>{%- endif -%}
+{%- endmacro %}

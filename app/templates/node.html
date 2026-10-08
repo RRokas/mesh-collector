@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% from "_macros.html" import ts, opt %}
+{% block title %}{{ node.node }} · Mesh collector{% endblock %}
+{% block subtitle %}Tag <span class="mono">{{ node.node }}</span> · {{ node.record_count }} records{% endblock %}
+{% block content %}
+<div class="stats" style="margin-top:8px">
+  <div class="stat"><div class="label">Temperature</div><div class="value">{{ opt(node.temp, '%.2f') }} °C</div><div class="sub">{{ ts(node.seen_at) }}</div></div>
+  <div class="stat"><div class="label">Humidity</div><div class="value">{{ opt(node.hum, '%.1f') }} %</div><div class="sub">seq {{ opt(node.seq) }}</div></div>
+  <div class="stat"><div class="label">Heard by</div><div class="value mono" style="font-size:15px">{{ node.origin or '—' }}</div><div class="sub">{{ node.hops if node.hops is not none else '—' }} hops · sink {{ node.sink or '—' }}</div></div>
+  <div class="stat"><div class="label">Delivered by</div><div class="value mono" style="font-size:15px">{{ node.via_router or '—' }}</div><div class="sub">received {{ ts(node.received_at) }}</div></div>
+</div>
+
+<div class="controls" role="group" aria-label="Chart range">
+  <div class="seg" id="range">
+    <button data-h="1">1 h</button><button data-h="6">6 h</button><button data-h="24" aria-pressed="true">24 h</button><button data-h="168">7 d</button><button data-h="720">30 d</button>
+  </div>
+  <div class="seg" id="axis">
+    <button data-t="seen_at" aria-pressed="true">Time heard</button><button data-t="received_at">Time received</button>
+  </div>
+  <span class="note" id="pts"></span>
+</div>
+
+<div class="card chart-card"><h3>Temperature, °C</h3><div class="chart-wrap"><canvas id="c-temp" aria-label="Temperature history"></canvas></div></div>
+<div class="card chart-card"><h3>Humidity, %RH</h3><div class="chart-wrap"><canvas id="c-hum" aria-label="Humidity history"></canvas></div></div>
+<p class="note">Long ranges are averaged into ~600 buckets. "Time heard" uses the origin router's clock; switch to "Time received" if a router's clock is off.</p>
+
+<h2>Recent readings (by time heard)</h2>
+<div class="card scroll">
+  <table>
+    <thead><tr>
+      <th>Heard</th><th class="num">Seq</th><th class="num">Temp</th><th class="num">Hum</th><th class="num">Status</th>
+      <th>Heard by</th><th>Delivered by</th><th class="num">Hops</th><th class="num">Paths</th><th>Received</th><th>Raw</th>
+    </tr></thead>
+    <tbody>
+    {% for r in recent %}
+    <tr>
+      <td>{{ ts(r.seen_at, 'abs') }}</td>
+      <td class="num mono">{{ r.seq }}</td>
+      <td class="num">{{ opt(r.temp, '%.2f') }}</td>
+      <td class="num">{{ opt(r.hum, '%.2f') }}</td>
+      <td class="num mono">{{ opt(r.status) }}</td>
+      <td class="mono">{{ r.origin or '—' }}</td>
+      <td class="mono">{{ r.via_router }}</td>
+      <td class="num">{{ opt(r.hops) }}</td>
+      <td class="num"><a href="/api/records/{{ r.id|urlencode }}">{{ r.paths }}</a></td>
+      <td>{{ ts(r.received_at) }}</td>
+      <td class="mono muted">{{ r.raw or '' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', path='chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', path='chartjs-adapter-date-fns.bundle.min.js') }}"></script>
+<script>
+(function () {
+  const NODE = {{ node.node|tojson }};
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  let hours = 24, timeField = "seen_at";
+  const charts = {};
+
+  function makeChart(id, color, unit, digits) {
+    return new Chart(document.getElementById(id), {
+      type: "line",
+      data: { datasets: [{ data: [], borderColor: color, backgroundColor: color, borderWidth: 2,
+                           pointRadius: 0, pointHoverRadius: 4, tension: 0, spanGaps: false }] },
+      options: {
+        animation: false, responsive: true, maintainAspectRatio: false, parsing: false,
+        interaction: { mode: "index", intersect: false, axis: "x" },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: {
+            label: (c) => " " + c.parsed.y.toFixed(digits) + " " + unit +
+              (c.raw.n > 1 ? "  (avg of " + c.raw.n + ")" : ""),
+          } },
+        },
+        scales: {
+          x: { type: "time", grid: { color: css("--grid") }, ticks: { color: css("--text-muted"), maxRotation: 0 } },
+          y: { grid: { color: css("--grid") }, ticks: { color: css("--text-muted") } },
+        },
+      },
+    });
+  }
+
+  async function load() {
+    const url = `/api/nodes/${encodeURIComponent(NODE)}/series?hours=${hours}&time_field=${timeField}`;
+    const rows = await (await fetch(url)).json();
+    const pts = (key) => rows.filter(r => r[key] !== null).map(r => ({ x: r.t * 1000, y: r[key], n: r.n }));
+    charts.temp.data.datasets[0].data = pts("temp");
+    charts.hum.data.datasets[0].data = pts("hum");
+    charts.temp.update(); charts.hum.update();
+    const n = rows.reduce((a, r) => a + r.n, 0);
+    document.getElementById("pts").textContent = n + " readings in range";
+  }
+
+  function seg(groupId, attr, apply) {
+    document.querySelectorAll(`#${groupId} button`).forEach(b => b.addEventListener("click", () => {
+      document.querySelectorAll(`#${groupId} button`).forEach(x => x.setAttribute("aria-pressed", x === b));
+      apply(b.dataset[attr]); load();
+    }));
+  }
+
+  charts.temp = makeChart("c-temp", css("--series-temp"), "°C", 2);
+  charts.hum = makeChart("c-hum", css("--series-hum"), "%", 1);
+  seg("range", "h", (v) => hours = parseFloat(v));
+  seg("axis", "t", (v) => timeField = v);
+  load();
+  setInterval(load, 60000);
+})();
+</script>
+{% endblock %}

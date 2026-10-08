@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% from "_macros.html" import ts, opt %}
+{% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
+{% block subtitle %}{{ counts.records }} records · {{ counts.nodes }} tags · decode: {{ s.decode_mode }} · auto-refresh 60 s{% endblock %}
+{% block content %}
+
+<h2>Alerts</h2>
+<div class="card">
+  {% if alerts %}
+  <ul class="alerts">
+    {% for a in alerts %}
+    <li>
+      <span class="pill {{ 'warn' if a.kind in ('router_clock_skew', 'quarantined_records', 'stale_tag') else 'bad' }}">{{ a.kind|replace('_', ' ') }}</span>
+      <strong class="mono">{{ a.subject }}</strong>
+      <span>{{ a.message }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <div class="empty"><span class="pill ok">ok</span> No alerts.</div>
+  {% endif %}
+</div>
+
+<h2>Tags — latest reading</h2>
+<div class="card scroll">
+  {% if nodes %}
+  <table>
+    <thead><tr>
+      <th>Tag</th><th class="num">Temp °C</th><th class="num">Hum %RH</th><th class="num">Status</th>
+      <th class="num">Seq</th><th>Heard (origin clock)</th><th>Received</th>
+      <th>Heard by</th><th>Delivered by</th><th class="num">Hops</th><th class="num">Records</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for n in nodes %}
+    <tr>
+      <td class="mono"><a href="/nodes/{{ n.node }}">{{ n.node }}</a></td>
+      <td class="num big">{% if n.temp is not none %}{{ '%.2f'|format(n.temp) }}{% if n.temp_out %} <span class="pill bad">range</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="num big">{% if n.hum is not none %}{{ '%.1f'|format(n.hum) }}{% if n.hum_out %} <span class="pill bad">range</span>{% endif %}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="num mono">{{ opt(n.status) }}</td>
+      <td class="num mono">{{ opt(n.seq) }}</td>
+      <td>{{ ts(n.seen_at) }}</td>
+      <td>{{ ts(n.received_at) }}</td>
+      <td class="mono">{% if n.origin %}<a href="/routers/{{ n.origin }}">{{ n.origin }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="mono"><a href="/routers/{{ n.via_router }}">{{ n.via_router }}</a></td>
+      <td class="num">{{ opt(n.hops) }}</td>
+      <td class="num">{{ n.record_count }}</td>
+      <td>{% if n.stale %}<span class="pill warn">stale</span>{% else %}<span class="pill ok">live</span>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No readings yet. Point a router's uplink at <span class="mono">/ingest</span>.</div>
+  {% endif %}
+</div>
+
+<h2>Routers</h2>
+<div class="card scroll">
+  {% if routers %}
+  <table>
+    <thead><tr>
+      <th>Router</th><th>Role</th><th>Last contact</th><th>Last heartbeat</th>
+      <th class="num">Delivered</th><th class="num">Dup copies</th><th class="num">POSTs</th>
+      <th class="num">Heard first</th><th>Last heard a tag</th><th class="num">Clock skew</th><th>IP</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for r in routers %}
+    <tr>
+      <td class="mono"><a href="/routers/{{ r.router_id }}">{{ r.router_id }}</a></td>
+      <td>{{ 'uplink' if r.is_uplink else 'mesh only' }}{% if r.is_uplink and r.records_originated %} + origin{% endif %}</td>
+      <td>{{ ts(r.last_contact) }}</td>
+      <td>{{ ts(r.last_heartbeat) }}</td>
+      <td class="num">{{ r.records_delivered }}</td>
+      <td class="num">{{ r.duplicates_delivered }}</td>
+      <td class="num">{{ r.posts }}</td>
+      <td class="num">{{ r.records_originated }}</td>
+      <td>{{ ts(r.last_originated_seen_at) }}</td>
+      <td class="num">{% if r.clock_skew_s is not none %}{{ r.clock_skew_s|dur }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="mono muted">{{ r.last_ip or '' }}</td>
+      <td>
+        {% if r.silent %}<span class="pill bad">silent</span>
+        {% elif r.clock_bad %}<span class="pill warn">clock</span>
+        {% elif r.is_uplink %}<span class="pill ok">online</span>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No router has posted yet.</div>
+  {% endif %}
+</div>
+<p class="note">"Heard first" counts readings this router was the <span class="mono">origin</span> of. "Dup copies" are records a router delivered that another path had already delivered — normal under at-least-once delivery. Clock skew = router's <span class="mono">sent_at</span> minus our receive time.</p>
+{% endblock %}

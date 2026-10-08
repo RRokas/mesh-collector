@@ -1,0 +1,94 @@
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4;
+  --surface-1: #fcfcfb;
+  --border: #e3e2dc;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #85847e;
+  --accent: #2a78d6;
+  --series-temp: #2a78d6;
+  --series-hum: #1baf7a;
+  --grid: #ecebe6;
+  --ok: #1a7f37;
+  --warn: #9a6700;
+  --bad: #c62828;
+  --warn-bg: #fff4d6;
+  --bad-bg: #fde8e8;
+  --ok-bg: #e6f4ea;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #121211;
+    --surface-1: #1a1a19;
+    --border: #2e2e2b;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8d8c84;
+    --accent: #3987e5;
+    --series-temp: #3987e5;
+    --series-hum: #199e70;
+    --grid: #262624;
+    --ok: #4ac26b;
+    --warn: #e3b341;
+    --bad: #ff7b72;
+    --warn-bg: #3a2e0f;
+    --bad-bg: #3d1717;
+    --ok-bg: #12301c;
+  }
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header {
+  display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+  padding: 14px 16px; border-bottom: 1px solid var(--border); background: var(--surface-1);
+}
+header h1 { margin: 0; font-size: 16px; font-weight: 650; }
+header .meta { color: var(--text-muted); font-size: 13px; }
+main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-secondary); margin: 24px 0 8px; }
+.card { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; }
+th, td { padding: 7px 10px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
+th { font-weight: 600; color: var(--text-secondary); font-size: 12px; }
+tr:last-child td { border-bottom: none; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.muted { color: var(--text-muted); }
+.big { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+.pill.ok { color: var(--ok); background: var(--ok-bg); }
+.pill.warn { color: var(--warn); background: var(--warn-bg); }
+.pill.bad { color: var(--bad); background: var(--bad-bg); }
+.alerts { list-style: none; margin: 0; padding: 0; }
+.alerts li { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.alerts li:last-child { border-bottom: none; }
+.empty { padding: 14px 12px; color: var(--text-muted); }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat { background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+.stat .label { color: var(--text-secondary); font-size: 12px; }
+.stat .value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.stat .sub { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+.controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 16px 0 8px; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.seg button {
+  background: var(--surface-1); color: var(--text-secondary); border: 0; padding: 5px 10px;
+  font: inherit; font-size: 13px; cursor: pointer; border-right: 1px solid var(--border);
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.chart-card { padding: 12px 12px 6px; margin-bottom: 12px; }
+.chart-card h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+.chart-wrap { position: relative; height: 240px; }
+.note { color: var(--text-muted); font-size: 12px; margin-top: 6px; }
