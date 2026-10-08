@@ -10,7 +10,7 @@
 <body>
   <header>
     <h1><a href="/" style="color:inherit">Mesh collector</a></h1>
-    <span class="meta">{% block subtitle %}{% endblock %}</span>
+    <span class="meta" id="live-subtitle" data-live>{% block subtitle %}{% endblock %}</span>
   </header>
   <main>{% block content %}{% endblock %}</main>
   <script src="{{ url_for('static', path='app.js') }}"></script>

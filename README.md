@@ -34,7 +34,7 @@ Everything else follows the handoff:
 - ordering is by `seen_at` (or `seq`), never by arrival
 - the whole batch is one transaction; Postgres gets a 10 s statement timeout and SQLite a 10 s busy timeout, so a stuck DB fails with 503 inside the router's 15 s window rather than timing out
 
-**Clocks.** "Latest reading" and staleness use `seen_at`, clamped to our receive time, so a router whose clock is in the future can't pin a tag's "latest" forever. Each uplink router's clock skew (`sent_at` minus our clock at receipt) is shown on the dashboard and alerts above `CLOCK_SKEW_WARN_SECONDS`. Charts can switch between "time heard" and "time received" for when a clock is wrong.
+**Clocks.** "Latest reading" and staleness use `seen_at`, clamped to our receive time, so a router whose clock is in the future can't pin a tag's "latest" forever. Each uplink router's delivery delay (our receive time minus the router's `sent_at` for its last POST) is shown on the dashboard and alerts above `DELIVERY_DELAY_WARN_SECONDS`. It is network transit time plus any error in the router's clock, so a large value means a slow uplink or a router that missed NTP. Charts can switch between "time heard" and "time received" for when a clock is wrong.
 
 ---
 
@@ -137,7 +137,7 @@ Then follow "End-to-end test with real routers" in the handoff. The dashboard's 
 | `DECODE_MODE` | `router` | `router`, `raw_be` or `raw_le`, see below |
 | `STALE_TAG_MINUTES` | 30 | tag alert threshold |
 | `SILENT_ROUTER_MINUTES` | 5 | uplink router alert threshold (heartbeat is ~1/min) |
-| `CLOCK_SKEW_WARN_SECONDS` | 120 | router clock alert threshold |
+| `DELIVERY_DELAY_WARN_SECONDS` | 120 | router delivery-delay alert threshold |
 | `TEMP_MIN` / `TEMP_MAX` | -40 / 85 | out-of-range alert, °C |
 | `HUM_MIN` / `HUM_MAX` | 0 / 100 | out-of-range alert, %RH |
 | `MAX_RECORDS_PER_POST` / `MAX_BODY_BYTES` | 1000 / 2000000 | abuse limits (routers send ≤200 / ~70 KB) |
@@ -172,7 +172,7 @@ docker compose up -d
 | `GET /api/nodes/{node}/series?hours=24&time_field=seen_at` | bucketed averages (~600 points max) for charts |
 | `GET /api/records?node=&router=&since=&until=&order=seen_at\|seq\|received_at&desc=true&limit=100&offset=0` | raw records; `router` matches origin or deliverer |
 | `GET /api/records/{id}` | one record plus every path it arrived by |
-| `GET /api/routers` | uplink and origin routers, last contact/heartbeat, counts, clock skew |
+| `GET /api/routers` | uplink and origin routers, last contact/heartbeat, counts, delivery delay |
 | `GET /api/alerts` | `[]` when healthy, so an uptime monitor can poll it |
 
 ## Data model

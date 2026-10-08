@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% from "_macros.html" import ts, opt %}
-{% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
-{% block subtitle %}{{ counts.records }} records · {{ counts.nodes }} tags · decode: {{ s.decode_mode }} · auto-refresh 60 s{% endblock %}
+{% block subtitle %}{{ counts.records }} records · {{ counts.nodes }} tags · decode: {{ s.decode_mode }} · live{% endblock %}
 {% block content %}
+<div id="live-content" data-live>
 
 <h2>Alerts</h2>
 <div class="card">
@@ -10,7 +10,7 @@
   <ul class="alerts">
     {% for a in alerts %}
     <li>
-      <span class="pill {{ 'warn' if a.kind in ('router_clock_skew', 'quarantined_records', 'stale_tag') else 'bad' }}">{{ a.kind|replace('_', ' ') }}</span>
+      <span class="pill {{ 'warn' if a.kind in ('router_delivery_delay', 'quarantined_records', 'stale_tag') else 'bad' }}">{{ a.kind|replace('_', ' ') }}</span>
       <strong class="mono">{{ a.subject }}</strong>
       <span>{{ a.message }}</span>
     </li>
@@ -61,7 +61,7 @@
     <thead><tr>
       <th>Router</th><th>Role</th><th>Last contact</th><th>Last heartbeat</th>
       <th class="num">Delivered</th><th class="num">Dup copies</th><th class="num">POSTs</th>
-      <th class="num">Heard first</th><th>Last heard a tag</th><th class="num">Clock skew</th><th>IP</th><th></th>
+      <th class="num">Heard first</th><th>Last heard a tag</th><th class="num">Delivery delay</th><th>IP</th><th></th>
     </tr></thead>
     <tbody>
     {% for r in routers %}
@@ -75,11 +75,11 @@
       <td class="num">{{ r.posts }}</td>
       <td class="num">{{ r.records_originated }}</td>
       <td>{{ ts(r.last_originated_seen_at) }}</td>
-      <td class="num">{% if r.clock_skew_s is not none %}{{ r.clock_skew_s|dur }}{% else %}<span class="muted">—</span>{% endif %}</td>
+      <td class="num">{% if r.delivery_delay_s is not none %}{{ r.delivery_delay_s|dur }}{% else %}<span class="muted">—</span>{% endif %}</td>
       <td class="mono muted">{{ r.last_ip or '' }}</td>
       <td>
         {% if r.silent %}<span class="pill bad">silent</span>
-        {% elif r.clock_bad %}<span class="pill warn">clock</span>
+        {% elif r.delay_bad %}<span class="pill warn">delay</span>
         {% elif r.is_uplink %}<span class="pill ok">online</span>{% endif %}
       </td>
     </tr>
@@ -90,5 +90,6 @@
   <div class="empty">No router has posted yet.</div>
   {% endif %}
 </div>
-<p class="note">"Heard first" counts readings this router was the <span class="mono">origin</span> of. "Dup copies" are records a router delivered that another path had already delivered — normal under at-least-once delivery. Clock skew = router's <span class="mono">sent_at</span> minus our receive time.</p>
+<p class="note">"Heard first" counts readings this router was the <span class="mono">origin</span> of. "Dup copies" are records a router delivered that another path had already delivered — normal under at-least-once delivery. Delivery delay = our receive time minus the router's <span class="mono">sent_at</span> for its last POST; a large value means a slow uplink or a wrong router clock.</p>
+</div>
 {% endblock %}

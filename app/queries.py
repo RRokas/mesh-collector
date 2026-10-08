@@ -49,13 +49,16 @@ def router_overview(engine: Engine, s: Settings, now: Optional[float] = None) ->
     for r in out:
         r["is_uplink"] = (r["posts"] or 0) > 0
         r["silent"] = r["is_uplink"] and (now - (r["last_contact"] or 0)) > s.silent_router_minutes * 60
-        # sent_at is their clock at POST time; received ~= our clock at the same moment.
-        r["clock_skew_s"] = (
-            r["last_sent_at"] - r["last_contact"]
+        # Delivery delay: our receive time minus the router's sent_at for its
+        # last POST. Network transit time, plus any error in the router's clock.
+        r["delivery_delay_s"] = (
+            r["last_contact"] - r["last_sent_at"]
             if r["is_uplink"] and r["last_sent_at"] is not None and r["last_contact"] is not None
             else None
         )
-        r["clock_bad"] = r["clock_skew_s"] is not None and abs(r["clock_skew_s"]) > s.clock_skew_warn_seconds
+        r["delay_bad"] = (
+            r["delivery_delay_s"] is not None and abs(r["delivery_delay_s"]) > s.delivery_delay_warn_seconds
+        )
     # Uplinks first, then origin-only routers.
     out.sort(key=lambda r: (not r["is_uplink"], r["router_id"]))
     return out
@@ -78,9 +81,10 @@ def alerts(engine: Engine, s: Settings, now: Optional[float] = None) -> list[dic
         if r["silent"]:
             out.append({"kind": "router_silent", "subject": r["router_id"],
                         "message": f"no contact for {(now - r['last_contact']) / 60:.0f} min"})
-        if r["clock_bad"]:
-            out.append({"kind": "router_clock_skew", "subject": r["router_id"],
-                        "message": f"clock off by {fmt_duration(r['clock_skew_s'])} (timestamps from it are unreliable)"})
+        if r["delay_bad"]:
+            out.append({"kind": "router_delivery_delay", "subject": r["router_id"],
+                        "message": f"delivery delay {fmt_duration(r['delivery_delay_s'])} "
+                                   "(slow uplink, or the router's clock is off)"})
     with engine.connect() as conn:
         qn = conn.execute(select(func.count()).select_from(quarantine)).scalar_one()
     if qn:

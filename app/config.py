@@ -37,7 +37,7 @@ class Settings:
     max_body_bytes: int
     stale_tag_minutes: float
     silent_router_minutes: float
-    clock_skew_warn_seconds: float
+    delivery_delay_warn_seconds: float
     temp_min: float
     temp_max: float
     hum_min: float
@@ -59,7 +59,7 @@ class Settings:
             max_body_bytes=_int("MAX_BODY_BYTES", 2_000_000),
             stale_tag_minutes=_float("STALE_TAG_MINUTES", 30),
             silent_router_minutes=_float("SILENT_ROUTER_MINUTES", 5),
-            clock_skew_warn_seconds=_float("CLOCK_SKEW_WARN_SECONDS", 120),
+            delivery_delay_warn_seconds=_float("DELIVERY_DELAY_WARN_SECONDS", 120),
             temp_min=_float("TEMP_MIN", -40),
             temp_max=_float("TEMP_MAX", 85),
             hum_min=_float("HUM_MIN", 0),

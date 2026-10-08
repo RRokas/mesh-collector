@@ -85,7 +85,7 @@ routers = Table(
     Column("first_contact", Float),
     Column("last_contact", Float),
     Column("last_heartbeat", Float),
-    Column("last_sent_at", Float),      # their clock at last POST (skew check)
+    Column("last_sent_at", Float),      # their clock at last POST (delivery delay)
     Column("last_ip", String(64)),
     Column("posts", BigInteger, nullable=False, default=0),
     Column("records_delivered", BigInteger, nullable=False, default=0),  # new records only

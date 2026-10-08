@@ -32,7 +32,7 @@ def settings(url: str, **kw) -> Settings:
     base = dict(
         database_url=_db_url(url), ingest_token="", dashboard_user="admin", dashboard_password="",
         decode_mode="router", max_records_per_post=1000, max_body_bytes=2_000_000,
-        stale_tag_minutes=30, silent_router_minutes=5, clock_skew_warn_seconds=120,
+        stale_tag_minutes=30, silent_router_minutes=5, delivery_delay_warn_seconds=120,
         temp_min=-40, temp_max=85, hum_min=0, hum_max=100,
     )
     base.update(kw)
@@ -211,7 +211,7 @@ def test_odd_timestamps_accepted(db_url):
     r = post(client, "R1", recs, sent_at=12345)
     assert r.status_code == 200 and r.json()["new"] == 2
     routers_ = client.get("/api/routers").json()
-    assert routers_[0]["clock_bad"] is True
+    assert routers_[0]["delay_bad"] is True
     # a router clock in the future doesn't pin "latest" or hide new data
     later = make_record(seq=3, seen_at=time.time())
     post(client, "R1", [later])

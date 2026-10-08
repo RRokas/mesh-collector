@@ -3,7 +3,7 @@
 {% block title %}{{ node.node }} · Mesh collector{% endblock %}
 {% block subtitle %}Tag <span class="mono">{{ node.node }}</span> · {{ node.record_count }} records{% endblock %}
 {% block content %}
-<div class="stats" style="margin-top:8px">
+<div class="stats" style="margin-top:8px" id="live-stats" data-live>
   <div class="stat"><div class="label">Temperature</div><div class="value">{{ opt(node.temp, '%.2f') }} °C</div><div class="sub">{{ ts(node.seen_at) }}</div></div>
   <div class="stat"><div class="label">Humidity</div><div class="value">{{ opt(node.hum, '%.1f') }} %</div><div class="sub">seq {{ opt(node.seq) }}</div></div>
   <div class="stat"><div class="label">Heard by</div><div class="value mono" style="font-size:15px">{{ node.origin or '—' }}</div><div class="sub">{{ node.hops if node.hops is not none else '—' }} hops · sink {{ node.sink or '—' }}</div></div>
@@ -25,7 +25,7 @@
 <p class="note">Long ranges are averaged into ~600 buckets. "Time heard" uses the origin router's clock; switch to "Time received" if a router's clock is off.</p>
 
 <h2>Recent readings (by time heard)</h2>
-<div class="card scroll">
+<div class="card scroll" id="live-recent" data-live>
   <table>
     <thead><tr>
       <th>Heard</th><th class="num">Seq</th><th class="num">Temp</th><th class="num">Hum</th><th class="num">Status</th>
@@ -84,21 +84,36 @@
     });
   }
 
-  async function load() {
-    const url = `/api/nodes/${encodeURIComponent(NODE)}/series?hours=${hours}&time_field=${timeField}`;
-    const rows = await (await fetch(url)).json();
-    const pts = (key) => rows.filter(r => r[key] !== null).map(r => ({ x: r.t * 1000, y: r[key], n: r.n }));
-    charts.temp.data.datasets[0].data = pts("temp");
-    charts.hum.data.datasets[0].data = pts("hum");
-    charts.temp.update(); charts.hum.update();
-    const n = rows.reduce((a, r) => a + r.n, 0);
-    document.getElementById("pts").textContent = n + " readings in range";
+  let seq = 0, inflight = false, lastKey = "";
+  async function load(force) {
+    if (!force && (inflight || document.hidden)) return;
+    const my = ++seq;
+    inflight = true;
+    try {
+      const url = `/api/nodes/${encodeURIComponent(NODE)}/series?hours=${hours}&time_field=${timeField}`;
+      const r = await fetch(url, { cache: "no-store", credentials: "same-origin" });
+      if (!r.ok || my !== seq) return;          // a newer request (e.g. range click) wins
+      const text = await r.text();
+      if (text === lastKey) return;              // nothing new: don't redraw
+      lastKey = text;
+      const rows = JSON.parse(text);
+      const pts = (key) => rows.filter(r => r[key] !== null).map(r => ({ x: r.t * 1000, y: r[key], n: r.n }));
+      charts.temp.data.datasets[0].data = pts("temp");
+      charts.hum.data.datasets[0].data = pts("hum");
+      charts.temp.update("none"); charts.hum.update("none");
+      const n = rows.reduce((a, r) => a + r.n, 0);
+      document.getElementById("pts").textContent = n + " readings in range";
+    } catch (e) {
+      // offline or redeploying: try again next tick
+    } finally {
+      if (my === seq) inflight = false;
+    }
   }
 
   function seg(groupId, attr, apply) {
     document.querySelectorAll(`#${groupId} button`).forEach(b => b.addEventListener("click", () => {
       document.querySelectorAll(`#${groupId} button`).forEach(x => x.setAttribute("aria-pressed", x === b));
-      apply(b.dataset[attr]); load();
+      apply(b.dataset[attr]); load(true);
     }));
   }
 
@@ -106,8 +121,8 @@
   charts.hum = makeChart("c-hum", css("--series-hum"), "%", 1);
   seg("range", "h", (v) => hours = parseFloat(v));
   seg("axis", "t", (v) => timeField = v);
-  load();
-  setInterval(load, 60000);
+  load(true);
+  setInterval(() => load(false), window.MESH_REFRESH_MS || 1000);
 })();
 </script>
 {% endblock %}
