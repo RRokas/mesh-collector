@@ -42,6 +42,7 @@ class Settings:
     temp_max: float
     hum_min: float
     hum_max: float
+    require_postgres: bool = False
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -63,4 +64,5 @@ class Settings:
             temp_max=_float("TEMP_MAX", 85),
             hum_min=_float("HUM_MIN", 0),
             hum_max=_float("HUM_MAX", 100),
+            require_postgres=os.environ.get("REQUIRE_POSTGRES", "").strip().lower() in ("1", "true", "yes"),
         )

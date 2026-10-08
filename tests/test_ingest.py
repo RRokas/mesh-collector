@@ -304,3 +304,25 @@ def test_pages_render(db_url):
     assert r2["records_originated"] == 3 and r2["is_uplink"] is False
     kinds = {a["kind"] for a in client.get("/api/alerts").json()}
     assert "temp_out_of_range" in kinds and "stale_tag" in kinds
+
+
+# ---- deployment guards -----------------------------------------------------------
+
+def test_require_postgres_refuses_sqlite(tmp_path):
+    with pytest.raises(RuntimeError, match="REQUIRE_POSTGRES"):
+        create_app(settings(f"sqlite:///{tmp_path}/x.db", require_postgres=True))
+
+
+def test_permission_denied_gives_actionable_error(monkeypatch):
+    from app import db as dbmod
+
+    class FakeEngine:
+        class url:
+            username = "db"
+
+    def boom(_):
+        raise Exception("(psycopg.errors.InsufficientPrivilege) permission denied for schema public")
+
+    monkeypatch.setattr(dbmod.metadata, "create_all", boom)
+    with pytest.raises(RuntimeError, match="GRANT USAGE, CREATE ON SCHEMA public TO db"):
+        dbmod.init_db(FakeEngine())

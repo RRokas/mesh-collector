@@ -136,4 +136,14 @@ def make_engine(url: str) -> Engine:
 
 
 def init_db(engine: Engine) -> None:
-    metadata.create_all(engine)
+    try:
+        metadata.create_all(engine)
+    except Exception as e:  # noqa: BLE001
+        if "permission denied for schema" in str(e).lower():
+            user = engine.url.username or "<app user>"
+            raise RuntimeError(
+                f"Database user {user!r} may not create tables (PostgreSQL 15+ default). "
+                f"Either connect as the cluster's admin user (doadmin), or run as admin: "
+                f"GRANT USAGE, CREATE ON SCHEMA public TO {user};"
+            ) from e
+        raise

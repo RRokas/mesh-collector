@@ -28,6 +28,10 @@ HERE = Path(__file__).parent
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
     s = settings or Settings.from_env()
+    if s.require_postgres and not s.database_url.startswith("postgresql"):
+        # On App Platform the container disk is wiped on every deploy, so a
+        # missing DATABASE_URL must fail loudly rather than fall back to SQLite.
+        raise RuntimeError("REQUIRE_POSTGRES is set but DATABASE_URL is not a postgresql:// URL")
     engine = make_engine(s.database_url)
     init_db(engine)
 
