@@ -6,7 +6,7 @@ region: fra
 services:
   - name: web
     github:
-      repo: YOUR_GITHUB_USER/mesh-collector
+      repo: RRokas/mesh-collector
       branch: main
       deploy_on_push: true
     dockerfile_path: Dockerfile
