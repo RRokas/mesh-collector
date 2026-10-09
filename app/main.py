@@ -138,6 +138,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             raise HTTPException(404, "unknown node")
         return templates.TemplateResponse(request, "node.html", {
             "node": overview,
+            "hops": queries.node_hop_stats(engine, node),
             "recent": queries.list_records(engine, node=node, limit=200),
             "s": s,
         })
@@ -187,7 +188,14 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             row = conn.execute(select(records).where(records.c.id == record_id)).first()
         if row is None:
             raise HTTPException(404, "unknown record")
-        return {**dict(row._mapping), "paths": queries.record_paths_for(engine, record_id)}
+        rec = dict(row._mapping)
+        rec["route"] = queries.decode_route(rec.get("route"))
+        return {**rec, "paths": queries.record_paths_for(engine, record_id)}
+
+    @app.get("/api/nodes/{node}/hops", dependencies=auth, tags=["api"])
+    def api_node_hops(node: str):
+        """Average / max BLE, router and total hops for one tag."""
+        return queries.node_hop_stats(engine, node)
 
     @app.get("/api/routers", dependencies=auth, tags=["api"])
     def api_routers():

@@ -13,7 +13,7 @@ any router that has internet ──(HTTP POST)──> THE APP TO BUILD
 - Each router runs the same Python server (`ble_web.py` + `mesh.py`, standard library only, Python 3.12 on RutOS). It decodes tag readings from its local Sink and stores them as **records**.
 - Routers sync records with manually configured peers (static IPs). Records spread hop by hop until some router with internet can deliver them.
 - A router with internet POSTs batches of pending records to its configured **uplink URL**. A 2xx response marks the whole batch as delivered, and that "delivered" state spreads back through the mesh.
-- `mesh_collector.py` is a minimal reference receiver (stdlib `http.server`, dedupes by id, appends to a JSONL file). The new app replaces it.
+- `mesh_collector.py` is a minimal reference receiver (stdlib `http.server`, dedupes by id, appends to a JSONL file, plain HTML table of recent records with hop columns at `/`). The new app replaces it.
 
 **The router side is done. Don't change the wire format below without also changing `mesh.py`.**
 
@@ -27,6 +27,7 @@ A web app on the internet that:
    - latest reading per tag (node)
    - temperature and humidity history per tag (charts)
    - which router heard each reading (`origin`) and which delivered it (`via_router`)
+   - **hop counts per reading, each separately and as a sum**: BLE hops (beacon relays), router hops (router-to-router transfers) and total hops, plus the router route (e.g. `rutx10 → rutx11 → rutm16`). Aggregates such as average/max hops per tag or per route are a plus.
    - router overview: last contact, records delivered, last heartbeat
 4. *(Optional)* An API to query records, and alerts: stale tags, routers silent for X minutes, out-of-range values.
 
@@ -61,7 +62,11 @@ Body:
       "raw": "00a1b2c3086911a801000003e8000002",
       "sink": "84:71:27:AA:BB:01",
       "origin": "RUTX10-7c01",
-      "seen_at": 1759929987.1
+      "seen_at": 1759929987.1,
+      "route": ["RUTX10-7c01", "RUTX10-9d22", "RUTX10-a3f2"],
+      "ble_hops": 2,
+      "router_hops": 2,
+      "total_hops": 4
     }
   ]
 }
@@ -78,11 +83,17 @@ Body:
 | `temp` | number | °C, 2 decimals (decoded from signed hundredths). |
 | `hum` | number | %RH, 2 decimals (decoded from hundredths). |
 | `status` | integer 0–255 | Sensor status byte. **Bit meanings not yet defined** by the tag developer; store it raw. |
-| `hops` | integer 0–255 | Ad-hoc / hop count at the time this router heard it. |
+| `hops` | integer 0–255 | BLE hop count from the tag payload (byte 15). Same value as `ble_hops`; kept for compatibility. |
 | `raw` | hex string (32 chars) | The 16-byte tag payload exactly as received. Keep it, so readings can be re-decoded later (see caveats). |
 | `sink` | string | MAC of the BLE Sink the router heard it from. |
 | `origin` | string | Router that first heard the reading over BLE. |
 | `seen_at` | number | Unix seconds when `origin` first heard it (origin router's clock). |
+| `route` | array of strings | Routers the record passed through, in order: `origin` first, the delivering router last. Each router appends its id when it receives the record from a peer. |
+| `ble_hops` | integer | Beacon-to-beacon relays (= `hops`). |
+| `router_hops` | integer | Router-to-router transfers = `len(route) - 1`. 0 if the router that heard it over BLE delivered it itself. |
+| `total_hops` | integer | `ble_hops + router_hops`. |
+
+The hop fields are computed by the router at send time. If any are missing (older router versions), derive them: `router_hops = len(route or [origin]) - 1`, `ble_hops = hops`. Exactly what the BLE hop count includes (e.g. whether the tag-to-sink hop counts as 1) is defined by the tag firmware. The sink-to-router step is in neither count.
 
 Raw payload layout (16 bytes): 0–3 node address (big-endian), 4–5 temperature (signed, 0.01 °C), 6–7 humidity (0.01 %RH), 8 status, 9–12 sequence (big-endian), 13–14 reserved, 15 hop count.
 
@@ -96,7 +107,7 @@ Raw payload layout (16 bytes): 0–3 node address (big-endian), 4–5 temperatur
 ### Router behaviour to design for
 
 - **At-least-once delivery.** Duplicates happen when two routers with internet send the same record before syncing, or when a 2xx gets lost. **Upsert / ignore on conflict by `id`.** A duplicate is not an error: still answer 2xx.
-- The same reading can arrive via different routers with different `hops`, `sink`, `origin` or `seen_at`. **First write wins**; optionally log the alternative paths.
+- The same reading can arrive via different routers with different `hops`, `route`, `sink`, `origin` or `seen_at`. **First write wins**; optionally log the alternative paths.
 - **No ordering guarantee.** Records arrive late (hours or days, after an outage) and out of order. Order by `seq` per node or by `seen_at`, never by arrival.
 - **Retry with backoff:** after a failure the router retries after 15 s, doubling up to 4 min. A full batch (200) is followed immediately by the next.
 - **Heartbeat:** when nothing is pending, roughly one empty POST per minute per router with internet.
@@ -124,7 +135,7 @@ curl -i -X POST $URL -H 'Content-Type: application/json' \
   -d '{"router_id":"R1","sent_at":1759930000,"records":[]}'
 
 # one record -> 2xx, stored
-curl -i -X POST $URL -H 'Content-Type: application/json' -d '{"router_id":"R1","sent_at":1759930012.4,"records":[{"id":"00A1B2C3-1000-086911a801","node":"00A1B2C3","seq":1000,"temp":21.53,"hum":45.2,"status":1,"hops":2,"raw":"00a1b2c3086911a801000003e8000002","sink":"84:71:27:AA:BB:01","origin":"R2","seen_at":1759929987.1}]}'
+curl -i -X POST $URL -H 'Content-Type: application/json' -d '{"router_id":"R1","sent_at":1759930012.4,"records":[{"id":"00A1B2C3-1000-086911a801","node":"00A1B2C3","seq":1000,"temp":21.53,"hum":45.2,"status":1,"hops":2,"raw":"00a1b2c3086911a801000003e8000002","sink":"84:71:27:AA:BB:01","origin":"R2","seen_at":1759929987.1,"route":["R2","R1"],"ble_hops":2,"router_hops":1,"total_hops":3}]}'
 
 # same record again from another router -> 2xx, still exactly one stored
 # same POST with "router_id":"R3" and "hops":4

@@ -21,6 +21,31 @@ from .db import nodes, quarantine, record_paths, records, routers
 from .decode import effective_values
 
 U32_MAX = 2**32 - 1
+MAX_ROUTE = 64
+
+
+def hop_fields(r: "RecordIn", via_router: str) -> dict:
+    """BLE hops, router hops, their total and the route (JSON) for one record.
+
+    router hops = len(route) - 1 when the router sent a route. Older routers
+    send none: then a router_hops value if given, 0 if the origin delivered it
+    itself, otherwise unknown (NULL) - the path in between isn't known.
+    """
+    if r.route:
+        router_hops: Optional[int] = len(r.route) - 1
+    elif r.router_hops is not None:
+        router_hops = r.router_hops
+    elif r.origin and r.origin == via_router:
+        router_hops = 0
+    else:
+        router_hops = None
+    ble = r.hops
+    return {
+        "route": json.dumps(r.route) if r.route else None,
+        "ble_hops": ble,
+        "router_hops": router_hops,
+        "total_hops": ble + router_hops if ble is not None and router_hops is not None else None,
+    }
 
 
 class BadRequest(Exception):
@@ -48,6 +73,26 @@ class RecordIn(BaseModel):
     sink: Optional[str] = Field(default=None, max_length=64)
     origin: Optional[str] = Field(default=None, max_length=64)
     seen_at: Optional[float] = None
+    # Router route (origin first, delivering router last) and the router's own
+    # router-hop count. Malformed values are dropped rather than quarantining
+    # the reading: the hop data is diagnostic, the reading itself is what matters.
+    # ble_hops / total_hops from the router are not read: they are derived here.
+    route: Optional[list[str]] = None
+    router_hops: Optional[int] = None
+
+    @field_validator("route", mode="before")
+    @classmethod
+    def _route(cls, v: Any) -> Optional[list[str]]:
+        if (isinstance(v, list) and 1 <= len(v) <= MAX_ROUTE
+                and all(isinstance(x, str) and 1 <= len(x) <= 64 for x in v)):
+            return v
+        return None
+
+    @field_validator("router_hops", mode="before")
+    @classmethod
+    def _router_hops(cls, v: Any) -> Optional[int]:
+        ok = isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= MAX_ROUTE
+        return v if ok else None
 
     @field_validator("node")
     @classmethod
@@ -158,6 +203,7 @@ def store_batch(
             "status": r.status, "hops": r.hops, "raw": r.raw, "sink": r.sink,
             "origin": r.origin, "seen_at": r.seen_at, "sent_at": sent_at,
             "via_router": router_id, "received_at": now,
+            **hop_fields(r, router_id),
         }
 
     # Stable ordering reduces lock-order deadlocks between concurrent batches.
@@ -178,6 +224,7 @@ def store_batch(
                 "origin": r["origin"] or "", "sink": r["sink"] or "",
                 "hops": r["hops"] if r["hops"] is not None else -1,
                 "seen_at": r["seen_at"], "received_at": now,
+                "route": r["route"], "router_hops": r["router_hops"],
             } for r in rows]
             conn.execute(
                 insert(record_paths).on_conflict_do_nothing(

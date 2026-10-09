@@ -32,6 +32,7 @@ Everything else follows the handoff:
 - unknown fields are ignored; odd `seen_at` / `sent_at` are stored as-is, never rejected
 - our own `received_at` is stored on every record
 - ordering is by `seen_at` (or `seq`), never by arrival
+- hop counts are derived here, not trusted from the router (see [Hops](#hops))
 - the whole batch is one transaction; Postgres gets a 10 s statement timeout and SQLite a 10 s busy timeout, so a stuck DB fails with 503 inside the router's 15 s window rather than timing out
 
 **Clocks.** "Latest reading" and staleness use `seen_at`, clamped to our receive time, so a router whose clock is in the future can't pin a tag's "latest" forever. Each uplink router's delivery delay (our receive time minus the router's `sent_at` for its last POST) is shown on the dashboard and alerts above `DELIVERY_DELAY_WARN_SECONDS`. It is network transit time plus any error in the router's clock, so a large value means a slow uplink or a router that missed NTP. Charts can switch between "time heard" and "time received" for when a clock is wrong.
@@ -43,7 +44,7 @@ Everything else follows the handoff:
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements-dev.txt
-pytest                                       # 22 tests, SQLite
+pytest                                       # 34 tests, SQLite
 uvicorn app.main:create_app --factory --reload
 # -> http://127.0.0.1:8000  (data in ./data/mesh.db)
 ```
@@ -173,17 +174,32 @@ docker compose up -d
 | `GET /api/records?node=&router=&since=&until=&order=seen_at\|seq\|received_at&desc=true&limit=100&offset=0` | raw records; `router` matches origin or deliverer |
 | `GET /api/records/{id}` | one record plus every path it arrived by |
 | `GET /api/routers` | uplink and origin routers, last contact/heartbeat, counts, delivery delay |
+| `GET /api/nodes/{node}/hops` | average / max BLE, router and total hops for one tag |
 | `GET /api/alerts` | `[]` when healthy, so an uptime monitor can poll it |
+
+## Hops
+
+Each reading shows three hop counts and the router route:
+
+| Field | Meaning | Source |
+|---|---|---|
+| `ble_hops` | beacon-to-beacon relays | `hops` from the tag payload |
+| `router_hops` | router-to-router transfers | `len(route) - 1` |
+| `total_hops` | `ble_hops + router_hops` | derived |
+| `route` | routers it passed through, origin first, deliverer last | sent by the routers (`mesh.py` appends each router on arrival) |
+
+The router's own `ble_hops` / `total_hops` are ignored and recomputed, so the numbers can't disagree with `route`. Routers running an older `mesh.py` send no `route`: if the origin delivered the reading itself, router hops are 0; otherwise they are unknown (shown as `—`, the route as `origin → ? → deliverer`). A malformed `route` is dropped, not quarantined, since the reading itself is fine. The tag page shows the latest hops and route plus averages and maxima over all its readings.
 
 ## Data model
 
 - `records`: one row per reading `id`, first write wins. Includes `via_router` (who delivered it first) and `received_at`.
-- `record_paths`: every distinct (deliverer, origin, sink, hops) a reading arrived by.
+- `records` also holds `route` (JSON array), `ble_hops`, `router_hops`, `total_hops` (see [Hops](#hops)).
+- `record_paths`: every distinct (deliverer, origin, sink, hops) a reading arrived by, with the route and router hops of the first copy on that key.
 - `nodes`, `routers`: summaries maintained in the same transaction as the insert, so the overview stays fast as records grow.
 - `quarantine`: per-record validation failures with the original JSON.
 
 ## Iterating
 
 - `pytest` covers every acceptance check in the handoff (heartbeat, single record, duplicate via another router, malformed 400, 200-record all-or-nothing, injected mid-batch DB failure → 503 with nothing stored, out-of-order arrival) plus auth, decode modes and page rendering.
-- Tables are created on startup (`create_all`), which adds new tables but doesn't alter existing ones. The first time you change a column, add Alembic (`alembic init`, point it at `app.db.metadata`).
+- Schema changes on startup: `create_all` creates missing tables and `migrate()` (in `app/db.py`) adds missing **nullable** columns to existing ones, on SQLite and Postgres, then logs `database migrated: added ...`. That is how the hop columns reach an existing database. Renames, type changes or new constraints are beyond it: add Alembic for those (`alembic init`, point it at `app.db.metadata`).
 - Alerts are computed on request, not pushed. For phone or email notifications, point an uptime monitor at `/api/alerts`, or add a small background task that posts state changes to a webhook.

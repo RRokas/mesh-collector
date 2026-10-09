@@ -1,13 +1,14 @@
 {% extends "base.html" %}
-{% from "_macros.html" import ts, opt %}
+{% from "_macros.html" import ts, opt, hop_cells, hop_heads, route %}
 {% block title %}{{ node.node }} · Mesh collector{% endblock %}
 {% block subtitle %}Tag <span class="mono">{{ node.node }}</span> · {{ node.record_count }} records{% endblock %}
 {% block content %}
 <div class="stats" style="margin-top:8px" id="live-stats" data-live>
   <div class="stat"><div class="label">Temperature</div><div class="value">{{ opt(node.temp, '%.2f') }} °C</div><div class="sub">{{ ts(node.seen_at) }}</div></div>
   <div class="stat"><div class="label">Humidity</div><div class="value">{{ opt(node.hum, '%.1f') }} %</div><div class="sub">seq {{ opt(node.seq) }}</div></div>
-  <div class="stat"><div class="label">Heard by</div><div class="value mono" style="font-size:15px">{{ node.origin or '—' }}</div><div class="sub">{{ node.hops if node.hops is not none else '—' }} hops · sink {{ node.sink or '—' }}</div></div>
-  <div class="stat"><div class="label">Delivered by</div><div class="value mono" style="font-size:15px">{{ node.via_router or '—' }}</div><div class="sub">received {{ ts(node.received_at) }}</div></div>
+  <div class="stat"><div class="label">Hops, latest</div><div class="value">{{ opt(node.total_hops) }}</div><div class="sub">{{ opt(node.ble_hops if node.ble_hops is not none else node.hops) }} BLE + {{ opt(node.router_hops) }} router</div></div>
+  <div class="stat"><div class="label">Hops, all readings</div><div class="value" style="font-size:17px">{% if hops.n %}avg {{ '%.1f'|format(hops.total_avg) }} · max {{ hops.total_max }}{% else %}—{% endif %}</div><div class="sub">{% if hops.n %}BLE avg {{ '%.1f'|format(hops.ble_avg) }} (max {{ hops.ble_max }}) · router avg {{ '%.1f'|format(hops.router_avg) }} (max {{ hops.router_max }}){% else %}no hop data yet{% endif %}</div></div>
+  <div class="stat"><div class="label">Route, latest</div><div class="value" style="font-size:14px">{{ route(node) }}</div><div class="sub">sink {{ node.sink or '—' }} · received {{ ts(node.received_at) }}</div></div>
 </div>
 
 <div class="controls" role="group" aria-label="Chart range">
@@ -29,7 +30,7 @@
   <table>
     <thead><tr>
       <th>Heard</th><th class="num">Seq</th><th class="num">Temp</th><th class="num">Hum</th><th class="num">Status</th>
-      <th>Heard by</th><th>Delivered by</th><th class="num">Hops</th><th class="num">Paths</th><th>Received</th><th>Raw</th>
+      {{ hop_heads() }}<th>Route</th><th class="num">Paths</th><th>Received</th><th>Raw</th>
     </tr></thead>
     <tbody>
     {% for r in recent %}
@@ -39,9 +40,8 @@
       <td class="num">{{ opt(r.temp, '%.2f') }}</td>
       <td class="num">{{ opt(r.hum, '%.2f') }}</td>
       <td class="num mono">{{ opt(r.status) }}</td>
-      <td class="mono">{{ r.origin or '—' }}</td>
-      <td class="mono">{{ r.via_router }}</td>
-      <td class="num">{{ opt(r.hops) }}</td>
+      {{ hop_cells(r) }}
+      <td>{{ route(r) }}</td>
       <td class="num"><a href="/api/records/{{ r.id|urlencode }}">{{ r.paths }}</a></td>
       <td>{{ ts(r.received_at) }}</td>
       <td class="mono muted">{{ r.raw or '' }}</td>

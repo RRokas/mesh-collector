@@ -306,6 +306,108 @@ def test_pages_render(db_url):
     assert "temp_out_of_range" in kinds and "stale_tag" in kinds
 
 
+# ---- hop accounting (route, BLE / router / total hops) --------------------------
+
+ROUTED = {**EXAMPLE, "route": ["R2", "R4", "R1"], "ble_hops": 2, "router_hops": 2, "total_hops": 99}
+
+
+def test_hop_fields_derived_from_route(db_url):
+    client, eng = make_client(db_url)
+    assert post(client, "R1", [ROUTED]).status_code == 200
+    with eng.connect() as c:
+        row = c.execute(select(records)).one()
+        path = c.execute(select(record_paths)).one()
+    # router's total_hops (99) is ignored: totals are derived here
+    assert (row.ble_hops, row.router_hops, row.total_hops) == (2, 2, 4)
+    assert path.router_hops == 2
+    rec = client.get(f"/api/records/{EXAMPLE['id']}").json()
+    assert rec["route"] == ["R2", "R4", "R1"] and rec["paths"][0]["route"] == ["R2", "R4", "R1"]
+    listed = client.get("/api/records").json()[0]
+    assert listed["route"] == ["R2", "R4", "R1"] and listed["total_hops"] == 4
+    node = client.get("/api/nodes").json()[0]
+    assert (node["ble_hops"], node["router_hops"], node["total_hops"]) == (2, 2, 4)
+
+
+def test_hop_fields_from_older_routers_without_route(db_url):
+    client, eng = make_client(db_url)
+    own = make_record(seq=1, origin="R1", hops=3)          # origin delivered it itself
+    relayed = make_record(seq=2, origin="R2", hops=1)      # path in between unknown
+    told = {**make_record(seq=3, origin="R2", hops=1), "router_hops": 1}
+    assert post(client, "R1", [own, relayed, told]).status_code == 200
+    with eng.connect() as c:
+        got = {r.seq: (r.ble_hops, r.router_hops, r.total_hops, r.route)
+               for r in c.execute(select(records))}
+    assert got[1] == (3, 0, 3, None)
+    assert got[2] == (1, None, None, None)
+    assert got[3] == (1, 1, 2, None)
+    html = client.get("/nodes/00A1B2C3").text
+    assert "path in between not reported" in html          # "R2 → ? → R1"
+
+
+@pytest.mark.parametrize("bad_route", ["R1", [], [1, 2], ["x" * 65], ["R"] * 65, {"a": 1}])
+def test_malformed_route_is_dropped_not_quarantined(db_url, bad_route):
+    client, eng = make_client(db_url)
+    r = post(client, "R1", [{**EXAMPLE, "route": bad_route, "router_hops": "lots"}])
+    assert r.status_code == 200 and r.json()["new"] == 1 and r.json()["quarantined"] == 0
+    with eng.connect() as c:
+        row = c.execute(select(records)).one()
+    assert row.route is None and row.router_hops is None and row.ble_hops == 2
+
+
+def test_hop_display_and_stats(db_url):
+    client, eng = make_client(db_url)
+    older = {**make_record(seq=7, hops=0, seen_at=EXAMPLE["seen_at"] - 600), "route": ["R1"]}
+    post(client, "R1", [ROUTED, older])
+    html = client.get("/").text
+    for text_ in ("BLE hops", "Router hops", "Total hops", "R4", "→"):
+        assert text_ in html
+    node_html = client.get("/nodes/00A1B2C3").text
+    assert "Hops, all readings" in node_html and "avg 2.0" in node_html
+    stats = client.get("/api/nodes/00A1B2C3/hops").json()
+    assert stats["n"] == 2 and stats["total_max"] == 4 and stats["router_avg"] == 1.0
+    assert "R4" in client.get("/routers/R1").text
+
+
+def test_migration_adds_hop_columns_to_an_existing_database(tmp_path):
+    """A database created by the previous version must keep working after deploy."""
+    from sqlalchemy import Column, Float, Integer, MetaData, String, Table, UniqueConstraint, inspect
+    from app.db import make_engine
+    url = f"sqlite:///{tmp_path}/old.db"
+    eng = make_engine(url)
+    old = MetaData()
+    cols = [Column("id", String(80), primary_key=True), Column("node", String(16), nullable=False),
+            Column("seq", Integer, nullable=False), Column("temp", Float), Column("hum", Float),
+            Column("temp_router", Float), Column("hum_router", Float), Column("status", Integer),
+            Column("hops", Integer), Column("raw", String(64)), Column("sink", String(64)),
+            Column("origin", String(64)), Column("seen_at", Float), Column("sent_at", Float),
+            Column("via_router", String(64), nullable=False), Column("received_at", Float, nullable=False)]
+    old_records = Table("records", old, *cols)
+    Table("record_paths", old, Column("pk", Integer, primary_key=True), Column("record_id", String(80)),
+          Column("via_router", String(64)), Column("origin", String(64)), Column("sink", String(64)),
+          Column("hops", Integer), Column("seen_at", Float), Column("received_at", Float),
+          UniqueConstraint("record_id", "via_router", "origin", "sink", "hops", name="uq_record_path"))
+    old.create_all(eng)
+    with eng.begin() as c:
+        c.execute(old_records.insert(), [
+            {"id": "a", "node": "N", "seq": 1, "hops": 2, "origin": "R1", "via_router": "R1", "received_at": 1.0},
+            {"id": "b", "node": "N", "seq": 2, "hops": 1, "origin": "R2", "via_router": "R1", "received_at": 1.0},
+        ])
+    eng.dispose()
+
+    client, eng = make_client(url)                       # app start runs the migration
+    names = {c["name"] for c in inspect(eng).get_columns("records")}
+    assert {"route", "ble_hops", "router_hops", "total_hops"} <= names
+    assert {"route", "router_hops"} <= {c["name"] for c in inspect(eng).get_columns("record_paths")}
+    with eng.connect() as c:
+        got = {r.id: (r.ble_hops, r.router_hops, r.total_hops) for r in c.execute(select(records))}
+    assert got == {"a": (2, 0, 2), "b": (1, None, None)}
+    assert post(client, "R1", [ROUTED]).status_code == 200   # new-format ingest works
+    assert client.get("/").status_code == 200
+    # and starting again is a no-op
+    from app.db import migrate
+    assert migrate(eng) == []
+
+
 # ---- deployment guards -----------------------------------------------------------
 
 def test_require_postgres_refuses_sqlite(tmp_path):

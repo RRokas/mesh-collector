@@ -1,6 +1,7 @@
 """Read side: overview, per-node history, record listing, alerts."""
 from __future__ import annotations
 
+import json
 import time
 from typing import Optional
 
@@ -15,7 +16,22 @@ MAX_CHART_POINTS = 600
 
 
 def _rows(result) -> list[dict]:
-    return [dict(r._mapping) for r in result]
+    """Rows as dicts; a stored "route" (JSON text) comes back as a list."""
+    out = [dict(r._mapping) for r in result]
+    for d in out:
+        if "route" in d:
+            d["route"] = decode_route(d["route"])
+    return out
+
+
+def decode_route(v) -> Optional[list]:
+    if not v:
+        return None
+    try:
+        route = json.loads(v)
+    except (TypeError, ValueError):
+        return None
+    return route if isinstance(route, list) else None
 
 
 def node_overview(engine: Engine, s: Settings, now: Optional[float] = None) -> list[dict]:
@@ -26,7 +42,8 @@ def node_overview(engine: Engine, s: Settings, now: Optional[float] = None) -> l
             nodes.c.last_received_at, nodes.c.last_seen_at,
             records.c.id, records.c.seq, records.c.temp, records.c.hum, records.c.status,
             records.c.hops, records.c.origin, records.c.via_router, records.c.sink,
-            records.c.seen_at, records.c.received_at,
+            records.c.seen_at, records.c.received_at, records.c.route,
+            records.c.ble_hops, records.c.router_hops, records.c.total_hops,
         )
         .select_from(nodes.outerjoin(records, records.c.id == nodes.c.last_record_id))
         .order_by(nodes.c.node)
@@ -159,6 +176,20 @@ def list_records(
     q = q.order_by(*[c.desc() if desc else c.asc() for c in order_cols]).limit(limit).offset(offset)
     with engine.connect() as conn:
         return _rows(conn.execute(q))
+
+
+def node_hop_stats(engine: Engine, node: str) -> dict:
+    """Average / max BLE, router and total hops over all of a tag's records
+    (only records where the value is known count towards each figure)."""
+    r = records.c
+    q = select(
+        cast(func.avg(r.ble_hops), Float).label("ble_avg"), func.max(r.ble_hops).label("ble_max"),
+        cast(func.avg(r.router_hops), Float).label("router_avg"), func.max(r.router_hops).label("router_max"),
+        cast(func.avg(r.total_hops), Float).label("total_avg"), func.max(r.total_hops).label("total_max"),
+        func.count(r.total_hops).label("n"),
+    ).where(r.node == node.upper())
+    with engine.connect() as conn:
+        return dict(conn.execute(q).one()._mapping)
 
 
 def record_paths_for(engine: Engine, record_id: str) -> list[dict]:

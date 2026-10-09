@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import ts, opt %}
+{% from "_macros.html" import ts, opt, hop_cells, hop_heads, route %}
 {% block subtitle %}{{ counts.records }} records · {{ counts.nodes }} tags · decode: {{ s.decode_mode }} · live{% endblock %}
 {% block content %}
 <div id="live-content" data-live>
@@ -28,7 +28,7 @@
     <thead><tr>
       <th>Tag</th><th class="num">Temp °C</th><th class="num">Hum %RH</th><th class="num">Status</th>
       <th class="num">Seq</th><th>Heard (origin clock)</th><th>Received</th>
-      <th>Heard by</th><th>Delivered by</th><th class="num">Hops</th><th class="num">Records</th><th></th>
+      {{ hop_heads() }}<th>Route</th><th class="num">Records</th><th></th>
     </tr></thead>
     <tbody>
     {% for n in nodes %}
@@ -40,9 +40,8 @@
       <td class="num mono">{{ opt(n.seq) }}</td>
       <td>{{ ts(n.seen_at) }}</td>
       <td>{{ ts(n.received_at) }}</td>
-      <td class="mono">{% if n.origin %}<a href="/routers/{{ n.origin }}">{{ n.origin }}</a>{% else %}<span class="muted">—</span>{% endif %}</td>
-      <td class="mono"><a href="/routers/{{ n.via_router }}">{{ n.via_router }}</a></td>
-      <td class="num">{{ opt(n.hops) }}</td>
+      {{ hop_cells(n) }}
+      <td>{{ route(n) }}</td>
       <td class="num">{{ n.record_count }}</td>
       <td>{% if n.stale %}<span class="pill warn">stale</span>{% else %}<span class="pill ok">live</span>{% endif %}</td>
     </tr>
@@ -90,6 +89,7 @@
   <div class="empty">No router has posted yet.</div>
   {% endif %}
 </div>
+<p class="note">Route = routers the latest reading passed through: the one that heard it over Bluetooth first, the one that delivered it last. BLE hops come from the tag payload; router hops = route length − 1; total = both. "?" marks a reading from an older router version that didn't report its path.</p>
 <p class="note">"Heard first" counts readings this router was the <span class="mono">origin</span> of. "Dup copies" are records a router delivered that another path had already delivered — normal under at-least-once delivery. Delivery delay = our receive time minus the router's <span class="mono">sent_at</span> for its last POST; a large value means a slow uplink or a wrong router clock.</p>
 </div>
 {% endblock %}

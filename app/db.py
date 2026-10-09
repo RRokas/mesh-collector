@@ -1,6 +1,7 @@
 """Schema and engine. Works on SQLite (single-box) and PostgreSQL (managed)."""
 from __future__ import annotations
 
+import logging
 import os
 
 from sqlalchemy import (
@@ -16,9 +17,13 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
     event,
+    inspect,
+    text,
+    update,
 )
 from sqlalchemy.engine import Engine
 
+log = logging.getLogger("mesh_collector")
 metadata = MetaData()
 
 # One row per reading id. First write wins: later copies never overwrite it.
@@ -33,7 +38,7 @@ records = Table(
     Column("temp_router", Float),   # exactly as the router decoded it
     Column("hum_router", Float),
     Column("status", Integer),
-    Column("hops", Integer),
+    Column("hops", Integer),        # BLE hop count from the tag payload (as sent)
     Column("raw", String(64)),
     Column("sink", String(64)),
     Column("origin", String(64)),
@@ -41,6 +46,12 @@ records = Table(
     Column("sent_at", Float),       # delivering router clock
     Column("via_router", String(64), nullable=False),
     Column("received_at", Float, nullable=False),  # our clock
+    # Hop accounting (added later: nullable, see migrate()). route is a JSON
+    # array of router ids, origin first, delivering router last.
+    Column("route", Text),
+    Column("ble_hops", Integer),     # = hops
+    Column("router_hops", Integer),  # len(route) - 1; NULL when unknown (old routers)
+    Column("total_hops", Integer),   # ble_hops + router_hops
 )
 Index("ix_records_node_seen", records.c.node, records.c.seen_at)
 Index("ix_records_node_seq", records.c.node, records.c.seq)
@@ -60,6 +71,9 @@ record_paths = Table(
     Column("hops", Integer, nullable=False, default=-1),
     Column("seen_at", Float),
     Column("received_at", Float, nullable=False),
+    # Router route of the first copy with this (via, origin, sink, hops) key.
+    Column("route", Text),
+    Column("router_hops", Integer),
     UniqueConstraint("record_id", "via_router", "origin", "sink", "hops", name="uq_record_path"),
 )
 Index("ix_paths_record", record_paths.c.record_id)
@@ -135,9 +149,55 @@ def make_engine(url: str) -> Engine:
     )
 
 
+def migrate(engine: Engine) -> list[str]:
+    """Add columns that exist in the code but not yet in the database.
+
+    create_all() creates missing tables but never alters existing ones, so a
+    database created by an older version would lack new columns (and every
+    insert would fail -> 503 -> routers stuck retrying). Only nullable,
+    non-key columns are added this way; anything else needs a real migration.
+    Returns the "table.column" names that were added.
+    """
+    insp = inspect(engine)
+    prep = engine.dialect.identifier_preparer
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table in metadata.sorted_tables:
+            if not insp.has_table(table.name):
+                continue
+            have = {c["name"] for c in insp.get_columns(table.name)}
+            for col in table.columns:
+                if col.name in have:
+                    continue
+                if col.primary_key or not col.nullable:
+                    raise RuntimeError(
+                        f"column {table.name}.{col.name} is missing and can't be added automatically"
+                    )
+                conn.execute(text(
+                    f"ALTER TABLE {prep.format_table(table)} ADD COLUMN "
+                    f"{prep.format_column(col)} {col.type.compile(dialect=engine.dialect)}"
+                ))
+                added.append(f"{table.name}.{col.name}")
+        if any(a.startswith("records.") for a in added):
+            # Backfill what older rows allow: BLE hops always; router hops only
+            # when the origin delivered it itself (otherwise the path is unknown).
+            r = records.c
+            conn.execute(update(records).where(r.ble_hops.is_(None), r.hops.is_not(None))
+                         .values(ble_hops=r.hops))
+            conn.execute(update(records).where(r.router_hops.is_(None), r.origin == r.via_router)
+                         .values(router_hops=0))
+            conn.execute(update(records).where(r.total_hops.is_(None), r.ble_hops.is_not(None),
+                                               r.router_hops.is_not(None))
+                         .values(total_hops=r.ble_hops + r.router_hops))
+    if added:
+        log.info("database migrated: added %s", ", ".join(added))
+    return added
+
+
 def init_db(engine: Engine) -> None:
     try:
         metadata.create_all(engine)
+        migrate(engine)
     except Exception as e:  # noqa: BLE001
         if "permission denied for schema" in str(e).lower():
             user = engine.url.username or "<app user>"

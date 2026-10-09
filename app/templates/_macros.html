@@ -4,3 +4,29 @@
 {% macro opt(v, fmt='%s') -%}
 {%- if v is not none -%}{{ fmt|format(v) }}{%- else -%}<span class="muted">—</span>{%- endif -%}
 {%- endmacro %}
+{# Three <td>s: BLE hops, router hops, total. Router hops are unknown (—) for
+   records from older routers that sent no route. #}
+{% macro hop_cells(r) -%}
+<td class="num">{{ opt(r.ble_hops if r.ble_hops is not none else r.hops) }}</td>
+<td class="num">{{ opt(r.router_hops) }}</td>
+<td class="num"><strong>{{ opt(r.total_hops) }}</strong></td>
+{%- endmacro %}
+{% macro hop_heads() -%}
+<th class="num" title="Beacon-to-beacon relays, from the tag payload">BLE hops</th>
+<th class="num" title="Router-to-router transfers: route length − 1">Router hops</th>
+<th class="num" title="BLE hops + router hops">Total hops</th>
+{%- endmacro %}
+{# Router route, origin first, deliverer last. The origin and the deliverer
+   have router pages, so those two are links; routers in between are plain. #}
+{% macro rlink(id) -%}<a href="/routers/{{ id|urlencode }}">{{ id }}</a>{%- endmacro %}
+{% macro route(r) -%}
+{%- if r.route -%}<span class="mono">
+  {%- for hop in r.route -%}
+    {%- if not loop.first %} → {% endif -%}
+    {%- if (loop.first and hop == r.origin) or (loop.last and hop == r.via_router) -%}{{ rlink(hop) }}{%- else -%}{{ hop }}{%- endif -%}
+  {%- endfor -%}</span>
+{%- elif r.origin and r.origin == r.via_router -%}<span class="mono">{{ rlink(r.origin) }}</span>
+{%- elif r.origin -%}<span class="mono">{{ rlink(r.origin) }} → <span class="muted" title="older router: path in between not reported">?</span> → {{ rlink(r.via_router) }}</span>
+{%- elif r.via_router -%}<span class="mono">{{ rlink(r.via_router) }}</span>
+{%- else -%}<span class="muted">—</span>{%- endif -%}
+{%- endmacro %}

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import ts, opt %}
+{% from "_macros.html" import ts, opt, hop_cells, hop_heads, route %}
 {% block title %}{{ r.router_id }} · Mesh collector{% endblock %}
 {% block subtitle %}Router <span class="mono">{{ r.router_id }}</span> · {{ 'uplink' if r.is_uplink else 'mesh only' }}{% endblock %}
 {% block content %}
@@ -17,7 +17,7 @@
   <table>
     <thead><tr>
       <th>Received</th><th>Tag</th><th class="num">Seq</th><th class="num">Temp</th><th class="num">Hum</th>
-      <th>Heard by</th><th>Delivered by</th><th class="num">Hops</th><th>Heard</th>
+      {{ hop_heads() }}<th>Route</th><th>Heard</th>
     </tr></thead>
     <tbody>
     {% for x in recent %}
@@ -27,17 +27,16 @@
       <td class="num mono">{{ x.seq }}</td>
       <td class="num">{{ opt(x.temp, '%.2f') }}</td>
       <td class="num">{{ opt(x.hum, '%.2f') }}</td>
-      <td class="mono">{{ x.origin or '—' }}</td>
-      <td class="mono">{{ x.via_router }}</td>
-      <td class="num">{{ opt(x.hops) }}</td>
+      {{ hop_cells(x) }}
+      <td>{{ route(x) }}</td>
       <td>{{ ts(x.seen_at, 'abs') }}</td>
     </tr>
     {% else %}
-    <tr><td colspan="9" class="empty">Nothing yet.</td></tr>
+    <tr><td colspan="10" class="empty">Nothing yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>
 </div>
-<p class="note">"Delivered by" shows the first router that delivered each reading (first write wins); other paths are listed per record in the API.</p>
+<p class="note">The route ends with the first router that delivered each reading (first write wins); other paths are listed per record in the API.</p>
 </div>
 {% endblock %}
