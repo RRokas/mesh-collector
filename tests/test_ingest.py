@@ -408,6 +408,13 @@ def test_migration_adds_hop_columns_to_an_existing_database(tmp_path):
     assert migrate(eng) == []
 
 
+def test_demo_page(db_url):
+    client, eng = make_client(db_url, dashboard_password="pw")
+    assert client.get("/demo").status_code == 401                       # same auth as the dashboard
+    r = client.get("/demo", auth=("admin", "pw"))
+    assert r.status_code == 200 and 'id="topo"' in r.text and "/api/records" in r.text
+
+
 # ---- deployment guards -----------------------------------------------------------
 
 def test_require_postgres_refuses_sqlite(tmp_path):

@@ -154,6 +154,13 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "s": s,
         })
 
+    @app.get("/demo", response_class=HTMLResponse, dependencies=auth, include_in_schema=False)
+    def demo(request: Request):
+        """Animated topology: replays each received reading along its real path
+        (tag → BLE relays → routers → internet). Data comes from /api/records
+        and /api/routers in the browser; with no data it plays a sample route."""
+        return templates.TemplateResponse(request, "demo.html", {"s": s})
+
     # ---- JSON API --------------------------------------------------------------
     @app.get("/api/nodes", dependencies=auth, tags=["api"])
     def api_nodes():

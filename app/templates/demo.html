@@ -1,0 +1,310 @@
+{% extends "base.html" %}
+{% block title %}Demo · Mesh collector{% endblock %}
+{% block heading %}One uplink. Every reading gets through.{% endblock %}
+{% block subtitle %}<span>Each reading the collector receives replays the path it actually took: tag, beacon relays, routers, internet. · <a href="/">dashboard</a></span>{% endblock %}
+{% block head %}
+<style>
+  .demo-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 18px 0 6px; }
+  .demo-cap { color: var(--text-muted); font-size: 13.5px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .stage { max-width: 900px; margin: 0 auto; }
+  #topo { display: block; width: 100%; height: auto; font-family: var(--font); }
+
+  #topo .zone { fill: var(--panel); stroke: var(--border); stroke-width: 1.2; }
+  #topo .z-label { fill: var(--label); font-size: 13px; font-weight: 700; letter-spacing: .6px; text-decoration: underline; }
+  #topo .name { fill: #eeeeee; font-size: 22px; font-weight: 700; }
+  #topo .sub { fill: #8f8f8f; font-size: 14px; }
+  #topo .pill rect { stroke-width: 1.3; }
+  #topo .pill text { font-size: 11.5px; font-weight: 800; letter-spacing: .6px; }
+  #topo .pill.ok rect { fill: rgba(63,179,127,.14); stroke: var(--green); }
+  #topo .pill.ok text { fill: var(--green-ink); }
+  #topo .pill.bad rect { fill: rgba(224,86,86,.16); stroke: var(--bad); }
+  #topo .pill.bad text { fill: var(--bad-ink); }
+
+  #topo .link { fill: none; stroke: #5c5c5c; stroke-width: 2; }
+  #topo .link.ble { stroke-dasharray: 8 6; }
+  #topo .link.mesh { stroke-dasharray: 2 7; stroke-linecap: round; stroke-width: 3; }
+  #topo .link.on { stroke: var(--green); stroke-width: 3.2; animation: dash .6s linear infinite; }
+  @keyframes dash { to { stroke-dashoffset: -26; } }
+  #topo .l-label rect { fill: #1e1e1e; stroke: #363636; }
+  #topo .l-label text { fill: #a3a3a3; font-size: 13px; }
+
+  #topo .port .ring { fill: #1d1d1d; stroke: var(--green); stroke-width: 2.6; }
+  #topo .port.bad .ring { stroke: var(--bad); }
+  #topo .port .ico { fill: none; stroke: #d8d8d8; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  #topo .port .p-name { fill: #ececec; font-size: 18px; font-weight: 700; }
+  #topo .port .p-sub { fill: #8b8b8b; font-size: 13px; }
+  #topo .pulse .ring { stroke: var(--mint); filter: url(#glow); }
+
+  #topo .packet { fill: var(--mint); filter: url(#glow); }
+  #topo .pkt-label rect { fill: var(--packet-bg); stroke: var(--green); }
+  #topo .pkt-label text { fill: var(--packet-ink); font-size: 19px; font-weight: 800; }
+  #topo .toast { opacity: 0; transition: opacity .4s; }
+  #topo .toast.show { opacity: 1; }
+  #topo .toast rect { fill: var(--green); stroke: var(--mint); stroke-width: 2; filter: url(#glow); }
+  #topo .toast text { fill: var(--on-green); font-size: 19px; font-weight: 800; }
+  #topo .toast .via { font-size: 13px; font-weight: 600; }
+  @media (prefers-reduced-motion: reduce) { #topo .link.on { animation: none; } }
+</style>
+{% endblock %}
+{% block content %}
+<div class="demo-top">
+  <div class="routebar" id="routebar"><span class="k">Route</span><span class="route">loading…</span></div>
+  <div class="demo-cap" id="caption"></div>
+</div>
+<div class="card stage" style="padding:8px 4px 4px; background:transparent; border:0">
+  <svg id="topo" viewBox="0 0 760 400" role="img" aria-label="Animated path of the latest reading through the mesh">
+    <defs>
+      <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+        <feGaussianBlur stdDeviation="4" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+    <g id="layer"></g>
+  </svg>
+</div>
+<div class="legend" style="justify-content:center">
+  <span><i class="ln"></i>Uplink to the internet</span>
+  <span><i class="ln router"></i>Router to router</span>
+  <span><i class="ln ble"></i>Bluetooth LE</span>
+  <span><i class="dot"></i>Reading</span>
+</div>
+<p class="note" style="text-align:center;margin:10px auto 0">New readings play as they arrive; when nothing new comes in, the latest one replays. Beacon relays come from the reading's BLE hop count (individual beacons aren't identified). Add <span class="mono">?slow=2</span> to slow it down.</p>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  'use strict';
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.getElementById('topo');
+  const layer = document.getElementById('layer');
+  const SLOW = Math.max(0.2, parseFloat(new URLSearchParams(location.search).get('slow')) || 1);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms * SLOW));
+
+  const ICONS = {
+    globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/>',
+    router: '<rect x="3" y="12.5" width="18" height="6.5" rx="1.5"/><path d="M7 12.5 5.5 6M17 12.5 18.5 6M7 15.8h.01M10.5 15.8h.01"/>',
+    bt: '<path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/>',
+  };
+  // Layout (viewBox units). Rows are stacked top (internet side) to bottom (tag).
+  const W = 760, RING_X = 470, ROW_H = 92, LABEL_H = 30, GAP = 20, TOP = 132;
+  const HOP_MS = { ble: 1150, mesh: 950, uplink: 750 };
+  const SAMPLE = {   // shown when there is no data yet (same story as the slide)
+    node: 'DEMO', seq: 1, temp: 4.2, ble_hops: 1, route: ['RUTX10', 'RUTM10', 'RUTM16'],
+    via_router: 'RUTM16', origin: 'RUTX10', sample: true,
+  };
+
+  const el = (tag, attrs, parent, text) => {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs || {})) n.setAttribute(k, v);
+    if (text !== undefined) n.textContent = text;
+    if (parent) parent.appendChild(n);
+    return n;
+  };
+  const fmtTemp = (t) => (t === null || t === undefined) ? '—' : Number(t).toFixed(1) + ' °C';
+  function routeOf(r) {
+    if (r.route && r.route.length) return r.route.slice();
+    if (r.origin && r.origin !== r.via_router) return [r.origin, '?', r.via_router];
+    return [r.via_router || r.origin || '?'];
+  }
+  function bleHops(r) { return r.ble_hops ?? r.hops ?? 0; }
+
+  // ---- build the rows for one reading -------------------------------------
+  let uplinks = new Set();
+  function rowsFor(r) {
+    const route = routeOf(r), rows = [];
+    for (let i = route.length - 1; i >= 0; i--) {
+      const id = route[i], last = i === route.length - 1, first = i === 0;
+      const up = last && (uplinks.has(id) || r.sample);
+      rows.push({
+        kind: 'router', name: id, ok: up, icon: 'router',
+        label: id.toUpperCase() + ' · ' + (last ? 'INTERNET ACCESS' : first ? 'HEARD IT OVER BLUETOOTH' : 'MESH RELAY'),
+        sub: last ? 'Has internet: delivers to the collector' : first ? 'Router that heard the reading' : 'Passes it on to the next router',
+        port: last ? ['uplink', 'to the internet'] : first ? ['hci0', 'Bluetooth LE'] : ['mesh', 'router link'],
+        pill: up ? '● ONLINE' : '⚠ NO UPLINK',
+      });
+    }
+    const n = bleHops(r);
+    const relays = n > 3 ? 1 : n;   // more than three relays collapse into one row
+    for (let i = relays; i >= 1; i--) {
+      const many = n > 3;
+      rows.push({
+        kind: 'beacon', ok: false, icon: 'bt', pill: '⚠ NO INTERNET',
+        name: many ? 'Beacons × ' + n : (relays > 1 ? 'Beacon relay ' + i : 'Beacon relay'),
+        label: (many ? n + ' BEACON RELAYS' : 'BEACON ' + (relays > 1 ? i + ' ' : '') + '· RELAY'),
+        sub: 'Passes it on over Bluetooth LE', port: ['BLE', 'relay'],
+      });
+    }
+    rows.push({
+      kind: 'tag', ok: false, icon: 'bt', pill: '⚠ NO INTERNET',
+      name: r.sample ? 'Tag (sample)' : 'Tag ' + r.node,
+      label: 'TAG ' + (r.sample ? '' : r.node + ' ') + '· ORIGIN',
+      sub: 'Measured ' + fmtTemp(r.temp) + (r.sample ? '' : ' · seq ' + r.seq), port: ['BLE', 'origin'],
+    });
+    return rows;
+  }
+
+  // ---- draw ------------------------------------------------------------------
+  let ports = [], links = [], internet, toast, layoutKey = '';
+  function pill(parent, x, y, text, ok) {
+    const g = el('g', { class: 'pill ' + (ok ? 'ok' : 'bad'), transform: `translate(${x},${y})` }, parent);
+    const w = text.length * 7.6 + 22;
+    el('rect', { width: w, height: 22, rx: 11 }, g);
+    el('text', { x: w / 2, y: 15.5, 'text-anchor': 'middle' }, g, text);
+  }
+  function port(parent, x, y, icon, name, sub, ok) {
+    const g = el('g', { class: 'port' + (ok ? '' : ' bad') }, parent);
+    el('circle', { class: 'ring', cx: x, cy: y, r: 27 }, g);
+    const ico = el('g', { class: 'ico', transform: `translate(${x - 13},${y - 13}) scale(${26 / 24})` }, g);
+    ico.innerHTML = ICONS[icon];
+    if (name) el('text', { class: 'p-name', x: x + 40, y: y - 2 }, g, name);
+    if (sub) el('text', { class: 'p-sub', x: x + 40, y: y + 18 }, g, sub);
+    return g;
+  }
+  function linkLabel(parent, x, y, text) {
+    const g = el('g', { class: 'l-label', transform: `translate(${x},${y})` }, parent);
+    el('rect', { width: text.length * 8 + 18, height: 24, rx: 6 }, g);
+    el('text', { x: 9, y: 17 }, g, text);
+  }
+
+  function draw(rows) {
+    layer.replaceChildren();
+    ports = []; links = [];
+    const H = TOP + rows.length * (LABEL_H + ROW_H + GAP) + 10;
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    const linkG = el('g', {}, layer), rowG = el('g', {}, layer);
+
+    // Internet node at the top
+    internet = port(rowG, RING_X, 46, 'globe', 'Internet', 'Mesh collector', true);
+    const ys = rows.map((_, i) => TOP + i * (LABEL_H + ROW_H + GAP) + LABEL_H + ROW_H / 2);
+    rows.forEach((row, i) => {
+      const top = TOP + i * (LABEL_H + ROW_H + GAP);
+      el('text', { class: 'z-label', x: 14, y: top + 20 }, rowG, row.label);
+      el('rect', { class: 'zone', x: 10, y: top + LABEL_H, width: W - 20, height: ROW_H, rx: 14 }, rowG);
+      pill(rowG, 34, top + LABEL_H + 14, row.pill, row.ok);
+      el('text', { class: 'name', x: 34, y: top + LABEL_H + 60 }, rowG, row.name);
+      el('text', { class: 'sub', x: 34, y: top + LABEL_H + 80 }, rowG, row.sub);
+      ports.push(port(rowG, RING_X, ys[i], row.icon, row.port[0], row.port[1], row.ok));
+    });
+    // Links, travel direction bottom -> top; the last one goes to the internet.
+    for (let i = rows.length - 1; i >= 0; i--) {
+      const toY = i === 0 ? 46 : ys[i - 1];
+      const kind = i === 0 ? 'uplink' : (rows[i - 1].kind === 'router' && rows[i].kind === 'router') ? 'mesh' : 'ble';
+      const a = ys[i] - 27, b = toY + 27;
+      const path = el('path', { class: 'link ' + kind, d: `M${RING_X},${a} L${RING_X},${b}` }, linkG);
+      linkLabel(linkG, RING_X + 14, (a + b) / 2 - 12, kind === 'uplink' ? 'Uplink' : kind === 'mesh' ? 'Mesh' : 'BLE');
+      links.push({ path, kind, from: i, to: i - 1 });
+    }
+    // Toast (top right)
+    toast = el('g', { class: 'toast', transform: `translate(${W - 330},12)` }, layer);
+    el('rect', { width: 318, height: 64, rx: 14 }, toast);
+    toast.main = el('text', { x: 18, y: 28 }, toast, '');
+    toast.via = el('text', { class: 'via', x: 18, y: 50 }, toast, '');
+  }
+
+  // ---- animate one reading -----------------------------------------------------
+  function travel(link, dot, label) {
+    return new Promise((resolve) => {
+      const len = link.path.getTotalLength(), ms = HOP_MS[link.kind] * SLOW;
+      link.path.classList.add('on');
+      const t0 = performance.now();
+      const frame = (now) => {
+        const t = Math.min(1, (now - t0) / ms);
+        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        const pt = link.path.getPointAtLength(e * len);
+        dot.setAttribute('cx', pt.x); dot.setAttribute('cy', pt.y);
+        label.setAttribute('transform', `translate(${pt.x - 128},${pt.y - 19})`);
+        if (t < 1) return requestAnimationFrame(frame);
+        link.path.classList.remove('on');
+        resolve();
+      };
+      requestAnimationFrame(frame);
+    });
+  }
+
+  function setHeader(r, live) {
+    const route = routeOf(r), n = bleHops(r);
+    const bar = document.getElementById('routebar');
+    bar.replaceChildren();
+    const k = document.createElement('span'); k.className = 'k'; k.textContent = 'Route'; bar.append(k);
+    const span = document.createElement('span'); span.className = 'route';
+    const parts = [r.sample ? 'Tag' : 'Tag ' + r.node];
+    if (n) parts.push('BLE × ' + n);
+    parts.push(...route, 'Internet');
+    parts.forEach((p, i) => {
+      if (i) { const a = document.createElement('span'); a.className = 'arr'; a.textContent = '→'; span.append(a); }
+      const s = document.createElement('span'); s.textContent = p;
+      if (i === parts.length - 1) s.className = 'end';
+      span.append(s);
+    });
+    bar.append(span);
+    const cap = document.getElementById('caption');
+    cap.replaceChildren();
+    const p = document.createElement('span');
+    p.className = 'pill ' + (r.sample ? 'neutral' : live ? 'ok live' : 'neutral');
+    p.innerHTML = r.sample ? 'Sample' : live ? '<span class="dot"></span>New reading' : 'Replay';
+    const txt = document.createElement('span');
+    const rh = Math.max(0, route.length - 1);
+    txt.textContent = (r.sample ? 'No readings yet: sample route' : fmtTemp(r.temp) + ' · seq ' + r.seq) +
+      ' · ' + (n + rh) + ' hops (' + n + ' BLE + ' + rh + ' router)';
+    cap.append(p, txt);
+  }
+
+  async function play(r, live) {
+    const rows = rowsFor(r);
+    const key = JSON.stringify(rows.map((x) => [x.name, x.ok, x.label]));
+    if (key !== layoutKey) { draw(rows); layoutKey = key; }
+    setHeader(r, live);
+    const dot = el('circle', { class: 'packet', r: 11, cx: RING_X, cy: 0 }, layer);
+    const label = el('g', { class: 'pkt-label' }, layer);
+    el('rect', { width: 104, height: 38, rx: 19 }, label);
+    el('text', { x: 52, y: 26, 'text-anchor': 'middle' }, label, fmtTemp(r.temp));
+    for (const l of links) await travel(l, dot, label);
+    dot.remove(); label.remove();
+    internet.classList.add('pulse');
+    toast.main.textContent = '✓ ' + fmtTemp(r.temp) + ' received';
+    toast.via.textContent = r.sample ? 'sample route' : 'tag ' + r.node + ' · delivered by ' + (r.via_router || '?');
+    toast.classList.add('show');
+    await sleep(1800);
+    internet.classList.remove('pulse');
+    toast.classList.remove('show');
+    await sleep(600);
+  }
+
+  // ---- data: poll the API, queue new readings ---------------------------------
+  const queue = [];
+  let latest = null, lastReceived = null;
+  async function poll() {
+    try {
+      const [rr, ro] = await Promise.all([
+        fetch('/api/records?order=received_at&desc=true&limit=20', { cache: 'no-store', credentials: 'same-origin' }),
+        fetch('/api/routers', { cache: 'no-store', credentials: 'same-origin' }),
+      ]);
+      if (ro.ok) uplinks = new Set((await ro.json()).filter((x) => x.is_uplink).map((x) => x.router_id));
+      if (!rr.ok) return;
+      const recs = await rr.json();
+      if (!recs.length) return;
+      if (lastReceived === null) {            // first load: start with the newest reading
+        queue.push(recs[0]);
+      } else {
+        const fresh = recs.filter((x) => x.received_at > lastReceived).reverse();
+        queue.push(...fresh);
+        queue.splice(0, Math.max(0, queue.length - 5));   // keep up: play the newest five at most
+      }
+      latest = recs[0];
+      lastReceived = Math.max(lastReceived ?? 0, ...recs.map((x) => x.received_at));
+    } catch (e) { /* offline or redeploying: keep replaying */ }
+  }
+
+  async function run() {
+    await poll();
+    setInterval(poll, 2000);
+    for (;;) {
+      if (queue.length) await play(queue.shift(), true);
+      else if (latest) await play(latest, false);
+      else await play(SAMPLE, false);
+    }
+  }
+  run();
+})();
+</script>
+{% endblock %}
