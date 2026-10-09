@@ -4,29 +4,57 @@
 {% macro opt(v, fmt='%s') -%}
 {%- if v is not none -%}{{ fmt|format(v) }}{%- else -%}<span class="muted">—</span>{%- endif -%}
 {%- endmacro %}
-{# Three <td>s: BLE hops, router hops, total. Router hops are unknown (—) for
-   records from older routers that sent no route. #}
+
+{# Three <td>s: BLE hops, router hops, total (as the glowing "packet" label).
+   Router hops are unknown (—) for records from older routers that sent no route. #}
 {% macro hop_cells(r) -%}
 <td class="num">{{ opt(r.ble_hops if r.ble_hops is not none else r.hops) }}</td>
 <td class="num">{{ opt(r.router_hops) }}</td>
-<td class="num"><strong>{{ opt(r.total_hops) }}</strong></td>
+<td class="num">{% if r.total_hops is not none %}<span class="pkt">{{ r.total_hops }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
 {%- endmacro %}
 {% macro hop_heads() -%}
 <th class="num" title="Beacon-to-beacon relays, from the tag payload">BLE hops</th>
 <th class="num" title="Router-to-router transfers: route length − 1">Router hops</th>
-<th class="num" title="BLE hops + router hops">Total hops</th>
+<th class="num" title="BLE hops + router hops">Total</th>
 {%- endmacro %}
+
 {# Router route, origin first, deliverer last. The origin and the deliverer
    have router pages, so those two are links; routers in between are plain. #}
 {% macro rlink(id) -%}<a href="/routers/{{ id|urlencode }}">{{ id }}</a>{%- endmacro %}
-{% macro route(r) -%}
-{%- if r.route -%}<span class="mono">
+{% macro arr() %}<span class="arr">→</span>{% endmacro %}
+{% macro route(r, internet=false) -%}
+<span class="route">
+{%- if r.route -%}
   {%- for hop in r.route -%}
-    {%- if not loop.first %} → {% endif -%}
+    {%- if not loop.first %}{{ arr() }}{% endif -%}
     {%- if (loop.first and hop == r.origin) or (loop.last and hop == r.via_router) -%}{{ rlink(hop) }}{%- else -%}{{ hop }}{%- endif -%}
-  {%- endfor -%}</span>
-{%- elif r.origin and r.origin == r.via_router -%}<span class="mono">{{ rlink(r.origin) }}</span>
-{%- elif r.origin -%}<span class="mono">{{ rlink(r.origin) }} → <span class="muted" title="older router: path in between not reported">?</span> → {{ rlink(r.via_router) }}</span>
-{%- elif r.via_router -%}<span class="mono">{{ rlink(r.via_router) }}</span>
+  {%- endfor -%}
+{%- elif r.origin and r.origin == r.via_router -%}{{ rlink(r.origin) }}
+{%- elif r.origin -%}{{ rlink(r.origin) }}{{ arr() }}<span class="muted" title="older router: path in between not reported">?</span>{{ arr() }}{{ rlink(r.via_router) }}
+{%- elif r.via_router -%}{{ rlink(r.via_router) }}
 {%- else -%}<span class="muted">—</span>{%- endif -%}
+{%- if internet and (r.route or r.via_router) %}{{ arr() }}<span class="end">Internet</span>{% endif -%}
+</span>
 {%- endmacro %}
+
+{# The slide's top-right route bar, for the latest reading of a tag/page. #}
+{% macro routebar(r, caption='') -%}
+{%- if r -%}
+<div class="routebar"><span class="k">Route</span>{% if (r.ble_hops if r.ble_hops is not none else r.hops) %}<span class="chip" title="beacon-to-beacon relays before the first router">BLE × {{ r.ble_hops if r.ble_hops is not none else r.hops }}</span>{% endif %}{{ route(r, internet=true) }}</div>
+{%- if caption %}<div class="routebar-caption">{{ caption }}</div>{% endif -%}
+{%- endif -%}
+{%- endmacro %}
+
+{# Outlined ring with a line icon, like the device ports on the slide.
+   state: ok (green), bad (red), neutral (grey). #}
+{% macro ring(state='ok', icon='router', label='') -%}
+<span class="ring {{ state }}"{% if label %} role="img" aria-label="{{ label }}" title="{{ label }}"{% else %} aria-hidden="true"{% endif %}>
+{%- if icon == 'globe' -%}<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3.2 3 14.8 0 18M12 3c-3 3.2-3 14.8 0 18"/></svg>
+{%- elif icon == 'wifi' -%}<svg viewBox="0 0 24 24"><path d="M3.8 9.6a12 12 0 0 1 16.4 0M6.9 13a7.5 7.5 0 0 1 10.2 0M10 16.4a3 3 0 0 1 4 0"/><path d="M12 19.2h.01"/></svg>
+{%- elif icon == 'bt' -%}<svg viewBox="0 0 24 24"><path d="M7 7.5l10 9-5 4.5V3l5 4.5-10 9"/></svg>
+{%- else -%}<svg viewBox="0 0 24 24"><rect x="3" y="12.5" width="18" height="6.5" rx="1.5"/><path d="M7 12.5 5.5 6M17 12.5 18.5 6M7 15.8h.01M10.5 15.8h.01"/></svg>
+{%- endif -%}
+</span>
+{%- endmacro %}
+
+{% macro live() -%}<span class="pill ok live"><span class="dot"></span>Live</span>{%- endmacro %}

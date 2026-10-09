@@ -1,14 +1,15 @@
 {% extends "base.html" %}
-{% from "_macros.html" import ts, opt, hop_cells, hop_heads, route %}
+{% from "_macros.html" import ts, opt, hop_cells, hop_heads, route, routebar, live %}
 {% block title %}{{ node.node }} · Mesh collector{% endblock %}
-{% block subtitle %}Tag <span class="mono">{{ node.node }}</span> · {{ node.record_count }} records{% endblock %}
+{% block heading %}Tag {{ node.node }}{% endblock %}
+{% block subtitle %}{% if node.stale %}<span class="pill warn">⚠ Stale</span>{% else %}{{ live() }}{% endif %}<span>{{ node.record_count }} reading{{ '' if node.record_count == 1 else 's' }} · sink {{ node.sink or '—' }} · <a href="/">all tags</a></span>{% endblock %}
+{% block route %}{{ routebar(node, 'Latest reading of this tag') }}{% endblock %}
 {% block content %}
-<div class="stats" style="margin-top:8px" id="live-stats" data-live>
-  <div class="stat"><div class="label">Temperature</div><div class="value">{{ opt(node.temp, '%.2f') }} °C</div><div class="sub">{{ ts(node.seen_at) }}</div></div>
+<div class="stats" id="live-stats" data-live>
+  <div class="stat"><div class="label">Temperature</div><div class="value">{{ opt(node.temp, '%.2f') }} °C</div><div class="sub">heard {{ ts(node.seen_at) }}</div></div>
   <div class="stat"><div class="label">Humidity</div><div class="value">{{ opt(node.hum, '%.1f') }} %</div><div class="sub">seq {{ opt(node.seq) }}</div></div>
-  <div class="stat"><div class="label">Hops, latest</div><div class="value">{{ opt(node.total_hops) }}</div><div class="sub">{{ opt(node.ble_hops if node.ble_hops is not none else node.hops) }} BLE + {{ opt(node.router_hops) }} router</div></div>
-  <div class="stat"><div class="label">Hops, all readings</div><div class="value" style="font-size:17px">{% if hops.n %}avg {{ '%.1f'|format(hops.total_avg) }} · max {{ hops.total_max }}{% else %}—{% endif %}</div><div class="sub">{% if hops.n %}BLE avg {{ '%.1f'|format(hops.ble_avg) }} (max {{ hops.ble_max }}) · router avg {{ '%.1f'|format(hops.router_avg) }} (max {{ hops.router_max }}){% else %}no hop data yet{% endif %}</div></div>
-  <div class="stat"><div class="label">Route, latest</div><div class="value" style="font-size:14px">{{ route(node) }}</div><div class="sub">sink {{ node.sink or '—' }} · received {{ ts(node.received_at) }}</div></div>
+  <div class="stat"><div class="label">Hops, latest</div><div class="value">{% if node.total_hops is not none %}<span class="pkt">{{ node.total_hops }}</span>{% else %}—{% endif %}</div><div class="sub">{{ opt(node.ble_hops if node.ble_hops is not none else node.hops) }} BLE + {{ opt(node.router_hops) }} router</div></div>
+  <div class="stat"><div class="label">Hops, all readings</div><div class="value small">{% if hops.n %}avg {{ '%.1f'|format(hops.total_avg) }} · max {{ hops.total_max }}{% else %}—{% endif %}</div><div class="sub">{% if hops.n %}BLE avg {{ '%.1f'|format(hops.ble_avg) }} (max {{ hops.ble_max }}) · router avg {{ '%.1f'|format(hops.router_avg) }} (max {{ hops.router_max }}){% else %}no hop data yet{% endif %}</div></div>
 </div>
 
 <div class="controls" role="group" aria-label="Chart range">
@@ -25,7 +26,7 @@
 <div class="card chart-card"><h3>Humidity, %RH</h3><div class="chart-wrap"><canvas id="c-hum" aria-label="Humidity history"></canvas></div></div>
 <p class="note">Long ranges are averaged into ~600 buckets. "Time heard" uses the origin router's clock; switch to "Time received" if a router's clock is off.</p>
 
-<h2>Recent readings (by time heard)</h2>
+<h2>Recent readings · by time heard</h2>
 <div class="card scroll" id="live-recent" data-live>
   <table>
     <thead><tr>
@@ -44,7 +45,7 @@
       <td>{{ route(r) }}</td>
       <td class="num"><a href="/api/records/{{ r.id|urlencode }}">{{ r.paths }}</a></td>
       <td>{{ ts(r.received_at) }}</td>
-      <td class="mono muted">{{ r.raw or '' }}</td>
+      <td class="mono muted raw" title="{{ r.raw or '' }}">{{ r.raw or '' }}</td>
     </tr>
     {% endfor %}
     </tbody>
@@ -58,6 +59,8 @@
 (function () {
   const NODE = {{ node.node|tojson }};
   const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  Chart.defaults.font.family = css("--font");
+  Chart.defaults.color = css("--text-muted");
   let hours = 24, timeField = "seen_at";
   const charts = {};
 

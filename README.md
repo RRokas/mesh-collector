@@ -198,6 +198,10 @@ The router's own `ble_hops` / `total_hops` are ignored and recomputed, so the nu
 - `nodes`, `routers`: summaries maintained in the same transaction as the insert, so the overview stays fast as records grow.
 - `quarantine`: per-record validation failures with the original JSON.
 
+## Dashboard look
+
+Dark only, styled after the team's mesh topology slide: charcoal canvas with lifted panels, underlined uppercase section labels, outlined status pills (`● ONLINE`, `⚠ STALE`), one green accent, a route bar in the header (`Route … → Internet`, latest reading), ring icons for routers and the glowing "packet" label for total hops. All colours are tokens at the top of `app/static/style.css`; chart line colours there were checked for contrast on the panel colour. Inter is bundled (`app/static/fonts/`, SIL Open Font License, licence file alongside), so the page doesn't depend on Google Fonts.
+
 ## Iterating
 
 - `pytest` covers every acceptance check in the handoff (heartbeat, single record, duplicate via another router, malformed 400, 200-record all-or-nothing, injected mid-batch DB failure → 503 with nothing stored, out-of-order arrival) plus auth, decode modes and page rendering.
