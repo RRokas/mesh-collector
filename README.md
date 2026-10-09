@@ -3,10 +3,10 @@
 Internet-side receiver for the RUTX10 BLE mesh. Replaces `mesh_collector.py`.
 
 - `POST /ingest` — the router uplink (contract in `docs/mesh_collector_handoff.md`, unchanged)
-- `/` — dashboard: alerts, latest reading per tag, router overview
+- `/` — animated topology in the style of the team slide: each received reading travels its real path (tag → BLE relays → routers → internet); replays the latest when idle, plays a sample route when the database is empty (`?slow=2` to slow down). `/demo` redirects here.
+- `/debug` — dashboard: alerts, latest reading per tag, router overview
 - `/nodes/<NODE>` — temperature / humidity charts and recent readings for one tag
 - `/routers/<ID>` — one router: contact, heartbeats, what it heard and delivered
-- `/demo` — animated topology in the style of the team slide: each received reading travels its real path (tag → BLE relays → routers → internet); replays the latest when idle, plays a sample route when the database is empty (`?slow=2` to slow down)
 - `/api/...` — JSON API (interactive docs at `/api/docs`)
 - `/healthz` — liveness + DB check
 
@@ -85,7 +85,7 @@ Works today with plain-HTTP routers: Caddy serves `/ingest` on both HTTP and HTT
    docker compose up -d --build
    docker compose logs -f app
    ```
-5. Open `https://<DOMAIN>/` (user `admin`, your `DASHBOARD_PASSWORD`).
+5. Open `https://<DOMAIN>/` (user `admin`, your `DASHBOARD_PASSWORD`); the dashboard is at `/debug`.
 
 **Ship a change:**
 
@@ -201,7 +201,7 @@ The router's own `ble_hops` / `total_hops` are ignored and recomputed, so the nu
 
 ## Dashboard look
 
-Dark only, styled after the team's mesh topology slide: charcoal canvas with lifted panels, underlined uppercase section labels, outlined status pills (`● ONLINE`, `⚠ STALE`), one green accent, a route bar in the header (`Route … → Internet`, latest reading), ring icons for routers and the glowing "packet" label for total hops. All colours are tokens at the top of `app/static/style.css`; chart line colours there were checked for contrast on the panel colour. Inter is bundled (`app/static/fonts/`, SIL Open Font License, licence file alongside), so the page doesn't depend on Google Fonts.
+Dark only on every device (light-mode phones included: the dark background is inlined in each page and static URLs carry a content hash, so a cached old stylesheet can't make it white), styled after the team's mesh topology slide: charcoal canvas with lifted panels, underlined uppercase section labels, outlined status pills (`● ONLINE`, `⚠ STALE`), one green accent, a route bar in the header (`Route … → Internet`, latest reading), ring icons for routers and the glowing "packet" label for total hops. All colours are tokens at the top of `app/static/style.css`; chart line colours there were checked for contrast on the panel colour. Inter is bundled (`app/static/fonts/`, SIL Open Font License, licence file alongside), so the page doesn't depend on Google Fonts.
 
 ## Iterating
 

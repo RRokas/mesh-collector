@@ -1,7 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Demo · Mesh collector{% endblock %}
+{% block title %}Mesh collector{% endblock %}
+{% block home %}/{% endblock %}
 {% block heading %}One uplink. Every reading gets through.{% endblock %}
-{% block subtitle %}<span>Each reading the collector receives replays the path it actually took: tag, beacon relays, routers, internet. · <a href="/">dashboard</a></span>{% endblock %}
+{% block subtitle %}<span>Each reading the collector receives replays the path it actually took: tag, beacon relays, routers, internet. · <a href="/debug">debug view</a></span>{% endblock %}
 {% block head %}
 <style>
   .demo-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 18px 0 6px; }

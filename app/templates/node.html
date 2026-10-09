@@ -2,7 +2,7 @@
 {% from "_macros.html" import ts, opt, hop_cells, hop_heads, route, routebar, live %}
 {% block title %}{{ node.node }} · Mesh collector{% endblock %}
 {% block heading %}Tag {{ node.node }}{% endblock %}
-{% block subtitle %}{% if node.stale %}<span class="pill warn">⚠ Stale</span>{% else %}{{ live() }}{% endif %}<span>{{ node.record_count }} reading{{ '' if node.record_count == 1 else 's' }} · sink {{ node.sink or '—' }} · <a href="/">all tags</a></span>{% endblock %}
+{% block subtitle %}{% if node.stale %}<span class="pill warn">⚠ Stale</span>{% else %}{{ live() }}{% endif %}<span>{{ node.record_count }} reading{{ '' if node.record_count == 1 else 's' }} · sink {{ node.sink or '—' }} · <a href="/debug">all tags</a></span>{% endblock %}
 {% block route %}{{ routebar(node, 'Latest reading of this tag') }}{% endblock %}
 {% block content %}
 <div class="stats" id="live-stats" data-live>
@@ -53,8 +53,8 @@
 </div>
 {% endblock %}
 {% block scripts %}
-<script src="{{ url_for('static', path='chart.umd.min.js') }}"></script>
-<script src="{{ url_for('static', path='chartjs-adapter-date-fns.bundle.min.js') }}"></script>
+<script src="{{ asset('chart.umd.min.js') }}"></script>
+<script src="{{ asset('chartjs-adapter-date-fns.bundle.min.js') }}"></script>
 <script>
 (function () {
   const NODE = {{ node.node|tojson }};

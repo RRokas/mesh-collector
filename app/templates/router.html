@@ -2,7 +2,7 @@
 {% from "_macros.html" import ts, opt, hop_cells, hop_heads, route, routebar, ring %}
 {% block title %}{{ r.router_id }} · Mesh collector{% endblock %}
 {% block heading %}{{ r.router_id }}{% endblock %}
-{% block subtitle %}{% if r.silent %}<span class="pill bad">⚠ Silent</span>{% elif r.delay_bad %}<span class="pill warn">⚠ Delay</span>{% elif r.is_uplink %}<span class="pill ok">● Online</span>{% else %}<span class="pill neutral">Via mesh</span>{% endif %}<span>{{ 'Has internet: delivers the mesh\'s readings' if r.is_uplink else 'No uplink of its own: its readings reach us through other routers' }} · <a href="/">overview</a></span>{% endblock %}
+{% block subtitle %}{% if r.silent %}<span class="pill bad">⚠ Silent</span>{% elif r.delay_bad %}<span class="pill warn">⚠ Delay</span>{% elif r.is_uplink %}<span class="pill ok">● Online</span>{% else %}<span class="pill neutral">Via mesh</span>{% endif %}<span>{{ 'Has internet: delivers the mesh\'s readings' if r.is_uplink else 'No uplink of its own: its readings reach us through other routers' }} · <a href="/debug">overview</a></span>{% endblock %}
 {% block route %}{% if recent %}{{ routebar(recent[0], 'Latest record it heard or delivered') }}{% endif %}{% endblock %}
 {% block content %}
 <div id="live-content" data-live>

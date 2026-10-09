@@ -1,6 +1,7 @@
 """HTTP app: router ingest + dashboard + JSON API."""
 from __future__ import annotations
 
+import hashlib
 import hmac
 import logging
 import secrets
@@ -9,7 +10,7 @@ from pathlib import Path
 from typing import Literal, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -24,6 +25,15 @@ from .ingest import BadRequest, parse_body, store_batch
 
 log = logging.getLogger("mesh_collector")
 HERE = Path(__file__).parent
+
+
+def _static_version(static_dir: Path) -> str:
+    h = hashlib.sha1()
+    for p in sorted(static_dir.rglob("*")):
+        if p.is_file():
+            h.update(p.relative_to(static_dir).as_posix().encode())
+            h.update(p.read_bytes())
+    return h.hexdigest()[:10]
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -41,6 +51,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     templates.env.filters["dur"] = fmt_duration
+    # Versioned static URLs (/static/style.css?v=<hash>): every deploy that
+    # changes a static file changes its URL, so phones that cache CSS/JS
+    # aggressively (iOS Safari) can't keep showing an old stylesheet.
+    static_version = _static_version(HERE / "static")
+    templates.env.globals["asset"] = lambda path: f"/static/{path}?v={static_version}"
 
     if not s.ingest_token:
         log.warning("INGEST_TOKEN is not set: /ingest accepts unauthenticated POSTs")
@@ -118,7 +133,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
     # ---- dashboard -------------------------------------------------------------
     auth = [Depends(dashboard_auth)]
 
-    @app.get("/", response_class=HTMLResponse, dependencies=auth, include_in_schema=False)
+    @app.get("/debug", response_class=HTMLResponse, dependencies=auth, include_in_schema=False)
     def index(request: Request):
         now = time.time()
         return templates.TemplateResponse(request, "index.html", {
@@ -154,7 +169,11 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             "s": s,
         })
 
-    @app.get("/demo", response_class=HTMLResponse, dependencies=auth, include_in_schema=False)
+    @app.get("/demo", include_in_schema=False)
+    def demo_moved():
+        return RedirectResponse("/", status_code=308)   # the demo is the front page now
+
+    @app.get("/", response_class=HTMLResponse, dependencies=auth, include_in_schema=False)
     def demo(request: Request):
         """Animated topology: replays each received reading along its real path
         (tag → BLE relays → routers → internet). Data comes from /api/records

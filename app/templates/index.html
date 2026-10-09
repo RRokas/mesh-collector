@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import ts, opt, hop_cells, hop_heads, route, routebar, ring, live %}
-{% block subtitle %}{{ live() }}<span>{{ counts.records }} readings from {{ counts.nodes }} tag{{ '' if counts.nodes == 1 else 's' }}, delivered hop by hop through the mesh</span>{% endblock %}
+{% block subtitle %}{{ live() }}<span>{{ counts.records }} readings from {{ counts.nodes }} tag{{ '' if counts.nodes == 1 else 's' }}, delivered hop by hop through the mesh · <a href="/">animated view</a></span>{% endblock %}
 {% block route %}
 {%- set latest = nodes|selectattr('received_at')|sort(attribute='received_at')|last -%}
 {%- if latest %}{{ routebar(latest, 'Latest reading · tag ' ~ latest.node) }}{% endif -%}

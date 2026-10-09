@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import os
 import random
+import re
 import time
 import uuid
 
@@ -253,9 +254,11 @@ def test_ingest_token_query_and_bearer(db_url):
 def test_dashboard_basic_auth(db_url):
     client, eng = make_client(db_url, dashboard_password="pw")
     assert client.get("/").status_code == 401
+    assert client.get("/debug").status_code == 401
     assert client.get("/api/nodes").status_code == 401
     hdr = {"Authorization": "Basic " + base64.b64encode(b"admin:pw").decode()}
     assert client.get("/", headers=hdr).status_code == 200
+    assert client.get("/debug", headers=hdr).status_code == 200
     assert post(client, "R1", []).status_code == 200  # ingest unaffected
     assert client.get("/healthz").status_code == 200
 
@@ -287,11 +290,11 @@ def test_decode_mode_raw_le_and_redecode(db_url, monkeypatch):
 
 def test_pages_render(db_url):
     client, eng = make_client(db_url)
-    assert client.get("/").status_code == 200  # empty state
+    assert client.get("/debug").status_code == 200  # empty state
     post(client, "R1", [EXAMPLE, make_record(seq=5, temp=99),
                         make_record(node="0000BEEF", seq=1, seen_at=time.time() - 7200)])
     post(client, "R3", [])
-    html = client.get("/").text
+    html = client.get("/debug").text
     assert "00A1B2C3" in html and "R1" in html and "R2" in html
     assert client.get("/nodes/00A1B2C3").status_code == 200
     assert client.get("/nodes/00a1b2c3").status_code == 200
@@ -358,7 +361,7 @@ def test_hop_display_and_stats(db_url):
     client, eng = make_client(db_url)
     older = {**make_record(seq=7, hops=0, seen_at=EXAMPLE["seen_at"] - 600), "route": ["R1"]}
     post(client, "R1", [ROUTED, older])
-    html = client.get("/").text
+    html = client.get("/debug").text
     for text_ in ("BLE hops", "Router hops", "Total hops", "R4", "→"):
         assert text_ in html
     node_html = client.get("/nodes/00A1B2C3").text
@@ -402,17 +405,33 @@ def test_migration_adds_hop_columns_to_an_existing_database(tmp_path):
         got = {r.id: (r.ble_hops, r.router_hops, r.total_hops) for r in c.execute(select(records))}
     assert got == {"a": (2, 0, 2), "b": (1, None, None)}
     assert post(client, "R1", [ROUTED]).status_code == 200   # new-format ingest works
-    assert client.get("/").status_code == 200
+    assert client.get("/debug").status_code == 200
     # and starting again is a no-op
     from app.db import migrate
     assert migrate(eng) == []
 
 
-def test_demo_page(db_url):
+def test_demo_is_the_front_page(db_url):
     client, eng = make_client(db_url, dashboard_password="pw")
-    assert client.get("/demo").status_code == 401                       # same auth as the dashboard
-    r = client.get("/demo", auth=("admin", "pw"))
+    assert client.get("/").status_code == 401                           # same auth as the dashboard
+    r = client.get("/", auth=("admin", "pw"))
     assert r.status_code == 200 and 'id="topo"' in r.text and "/api/records" in r.text
+    assert 'href="/debug"' in r.text                                    # link to the old dashboard
+    moved = client.get("/demo", follow_redirects=False)
+    assert moved.status_code == 308 and moved.headers["location"] == "/"
+    debug = client.get("/debug", auth=("admin", "pw")).text
+    assert "Tags · latest reading" in debug and 'href="/"' in debug
+
+
+def test_pages_force_dark_and_version_static_urls(db_url):
+    client, eng = make_client(db_url)
+    for path in ("/", "/debug"):
+        html = client.get(path).text
+        assert 'content="dark only"' in html and "background:#1b1b1b" in html
+        css = re.search(r'href="(/static/style\.css\?v=[0-9a-f]{10})"', html)
+        js = re.search(r'src="(/static/app\.js\?v=[0-9a-f]{10})"', html)
+        assert css and js
+        assert client.get(css.group(1)).status_code == 200 and client.get(js.group(1)).status_code == 200
 
 
 # ---- deployment guards -----------------------------------------------------------

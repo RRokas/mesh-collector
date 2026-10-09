@@ -3,23 +3,26 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="dark">
+  <meta name="color-scheme" content="dark only">
   <meta name="theme-color" content="#1b1b1b">
+  <!-- Dark from the first paint, whatever the device theme, even before (or
+       without) the stylesheet: a cached old stylesheet can't make it white. -->
+  <style>:root{color-scheme:dark only}html,body{background:#1b1b1b;color:#cfcfcf}</style>
   <title>{% block title %}Mesh collector{% endblock %}</title>
   <link rel="preload" href="{{ url_for('static', path='fonts/inter-latin-wght.woff2') }}" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <link rel="stylesheet" href="{{ asset('style.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
   <header class="top">
     <div class="titles">
-      <h1><a href="/">{% block heading %}Mesh collector{% endblock %}</a></h1>
+      <h1><a href="{% block home %}/debug{% endblock %}">{% block heading %}Mesh collector{% endblock %}</a></h1>
       <p class="subtitle" id="live-subtitle" data-live>{% block subtitle %}{% endblock %}</p>
     </div>
     <div class="top-right" id="live-route" data-live>{% block route %}{% endblock %}</div>
   </header>
   <main>{% block content %}{% endblock %}</main>
-  <script src="{{ url_for('static', path='app.js') }}"></script>
+  <script src="{{ asset('app.js') }}"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
