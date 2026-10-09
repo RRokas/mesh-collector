@@ -4,7 +4,7 @@ Internet-side receiver for the RUTX10 BLE mesh. Replaces `mesh_collector.py`.
 
 - `POST /ingest` — the router uplink (contract in `docs/mesh_collector_handoff.md`, unchanged)
 - `/` — animated topology in the style of the team slide: each received reading travels its real path (tag → BLE relays → routers → internet); replays the latest when idle, plays a sample route when the database is empty (`?slow=2` to slow down). `/demo` redirects here.
-- `/debug` — dashboard: alerts, latest reading per tag, router overview
+- `/debug` — dashboard: alerts, latest reading per tag, router overview. Not linked from the front page; open it by URL.
 - `/nodes/<NODE>` — temperature / humidity charts and recent readings for one tag
 - `/routers/<ID>` — one router: contact, heartbeats, what it heard and delivered
 - `/api/...` — JSON API (interactive docs at `/api/docs`)

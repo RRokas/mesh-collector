@@ -416,7 +416,7 @@ def test_demo_is_the_front_page(db_url):
     assert client.get("/").status_code == 401                           # same auth as the dashboard
     r = client.get("/", auth=("admin", "pw"))
     assert r.status_code == 200 and 'id="topo"' in r.text and "/api/records" in r.text
-    assert 'href="/debug"' in r.text                                    # link to the old dashboard
+    assert "/debug" not in r.text and "debug" not in r.text.lower()    # debug view is never linked publicly
     moved = client.get("/demo", follow_redirects=False)
     assert moved.status_code == 308 and moved.headers["location"] == "/"
     debug = client.get("/debug", auth=("admin", "pw")).text
